@@ -1,0 +1,13 @@
+ToDo-list:
+
+ - Provide a template for usage withing KDE, Gnome
+ - Translations
+ - Keyring integration
+ - export/import key function
+ - request key function
+ - serverinit
+ - getMasterKey()
+ - setMasterKey()
+ - notify()
+ - server cleanup function - remove old files n'shit no one needs anymore
+ - don't use a compression within the encryption (gpg), compression is done while creating the archive
