@@ -1,0 +1,30 @@
+# Maintainer: Florian Krauskopf <florian.kr@r3v0luti0n.com>
+pkgname=pygpgme
+pkgver=0.3
+pkgrel=1
+pkgdesc="A Python module for working with OpenPGP messages"
+url="https://launchpad.net/pygpgme"
+arch=('i686' 'x86_64')
+license=('LGPL')
+depends=('gpgme' 'python')
+makedepends=('make')
+conflicts=()
+replaces=()
+backup=()
+install=
+source=(https://launchpad.net/$pkgname/trunk/$pkgver/+download/$pkgname-$pkgver.tar.gz
+        add_missing_check_version.patch)
+md5sums=('d38355af73f0352cde3d410b25f34fd0'
+         '50b8c4ac4235b5433142d638563e0131')
+ 
+build() {
+  cd "$srcdir/$pkgname-$pkgver/src"
+  patch -p0 -f < "$srcdir/add_missing_check_version.patch"
+  cd "$srcdir/$pkgname-$pkgver"
+  make
+}
+ 
+package() {
+  cd "$srcdir/$pkgname-$pkgver"
+  ./setup.py install --root="$pkgdir/" --optimize=1
+}

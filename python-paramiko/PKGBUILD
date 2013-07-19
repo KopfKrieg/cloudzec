@@ -1,0 +1,28 @@
+# $Id$
+# Maintainer: Angel Velasquez <angvp@archlinux.org> 
+# Contributor: Douglas Soares de Andrade <douglas@archlinux.org>
+# Contributor: Mario Danic <mario.danic@gmail.com>
+
+pkgname=python-paramiko
+_gitname=paramiko
+pkgver=1.10.1
+pkgrel=1
+pkgdesc="Python module that implements the SSH2 protocol"
+#url="https://github.com/paramiko/paramiko/"
+url="https://github.com/nischu7/paramiko"
+license=('LGPL')
+arch=('any')
+depends=('python-crypto')
+source=('git://github.com/nischu7/paramiko.git')
+md5sums=('SKIP')
+
+package() {
+  ## Git
+  cd $_gitname
+  ## Package
+  python setup.py install --root="$pkgdir" --optimize=1
+  #install -Dm644 README "$pkgdir/usr/share/doc/$pkgname/README"
+  install -dm755 "$pkgdir/usr/share/doc/$pkgname/demos"
+  install -m644 demos/* "$pkgdir/usr/share/doc/$pkgname/demos"
+  chmod 755 "$pkgdir/usr/share/doc/$pkgname/demos/"*.py
+}
