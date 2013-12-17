@@ -13,7 +13,7 @@
 import os
 import sys
 
-import cloud
+import cloudzec
 
 
 ## Data
@@ -38,7 +38,7 @@ def debug(text):
 
 def main():
     ## Data
-    c = cloud.CloudZec(debug=DEBUG)
+    c = cloudzec.CloudZec(debug=DEBUG)
     #cloud = Cloud(username='florian', password='~/.ssh/id_rsa', port=1337, fingerprint='5A5A3BDC', serverpath='/home/florian/cloudzec', genKeyFile=True, debug=True)
 
     ## Arguments
