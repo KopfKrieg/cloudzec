@@ -64,7 +64,7 @@
 #  .
 #  |-- files
 #  |-- lock
-#  `-- server
+#  `-- server.log
 #
 ## Local structure
 # $syncFolder
@@ -74,20 +74,24 @@
 #  |   |-- download
 #  |   `-- upload
 #  |-- cloudzec.conf
-#  |-- client
+#  |-- client.log
 #  `-- key
 #
-## client | JSON | encrypted with masterkey | hist3 format
+## client.log and server.log | JSON | optionally encrypted with masterkey | l6-format
 #
 # [
-#   [time.time(), '+hash1', 'folder/file1', 'key1'],
-#   [time.time(), '+hash2', 'folder/file2', 'key2'],
-#   [time.time(), '+hash3', 'folder/file3', 'key3'],
-#   [time.time(), '+hash4', 'folder/file4', 'key4'],
-#   [time.time(), '-hash2', 'folder/file2', 'key2'],
-#   [time.time(), '+hash5', 'folder/file5', 'key5'],
-#   [time.time(), '-hash3', 'folder/file3', 'key3']
+#   [modification_time, 'hash_all', 'path', 'hash_file', 'action', 'key'],
 # ]
+#
+## The l6-format is a list in the following specification
+#
+# List index
+# 0  - float  | Modification-time of the file in UNIX-format, from os.path.getmtime(path) or time.time()
+# 1  - string | Hashsum of path and hashsum of file.  Example: h = hashlib.sha256('{}{}'.format(relative_path, hashsum_of_file))
+# 2  - string | Relative path of file, e.g. folder/file1.txt
+# 3  - string | Hashsum of file only
+# 4  - string | Action, can either be +, - or ?. + means added, - means removed, ? means the file changed (like a word document with modificated content)
+# 5  - string | The key for encryption. Maybe store external? Should only be synced if more than 1 device should have access
 #
 
 
@@ -124,20 +128,26 @@ class CloudZec:
         self.cache = os.path.join(self.confFolder, 'cache')
         self.cacheUp = os.path.join(self.confFolder, 'cache', 'upload')
         self.cacheDown = os.path.join(self.confFolder, 'cache', 'download')
-        self.clientFile = os.path.join(self.confFolder, 'client')   # Client file, JSON format, [[time.time(), '+hash1', 'key1', 'folder/file1'], ]
-        self.keyFile = os.path.join(self.confFolder, 'key')         # Key file with masterkey, not encrypted
+        self.clientLog = os.path.join(self.confFolder, 'client.log')    # Client.log in l6-format, JSON
+        self.keyFile = os.path.join(self.confFolder, 'key')             # Key file with masterkey, not encrypted
         #self.fingerprint = fingerprint  # Fingerprint of gpg key
         self.syncFolder = os.path.join(home, 'CloudZec')    # Local sync-folder
         self.serverpath = serverpath    # Path on server
         self.masterKey = None           # Masterkey for alloc.conf en/decryption
         self.compression = None         # Preferred compression algorithm |lzma: slow compress, small file, very fast decompress |bzip2: fast compress, small file, fast decompress |gzip: big file, very fast compress, very fast decompress |Choose wisely
         self.encryption = 'AES256'      # Preferred encryption algorithm
+        self.hashalgorithm = 'sha256'   # Preferred hash algorithm from hashlib:  md5, sha1, sha224, sha256, sha384, sha512
         # Create confFolder if missing
         if not os.path.exists(self.confFolder):
             self.debug('Create confFolder {}'.format(self.confFolder))
             os.makedirs(self.confFolder)
-        # Load configuration (and override defaults)
-        self.loadConfiguration()
+        # If confFile does not exists: Write the sample configuration-file and return
+        if not os.path.exists(self.confFile):
+            self.storeConfiguration()
+            return
+        else:
+            # Load configuration (and override defaults)
+            self.loadConfiguration()
         ## Check configuration
         rewrite = False
         # Check folder: cache
@@ -203,21 +213,18 @@ class CloudZec:
         Loads configuration from self.confFile and sets values (self.$variable)
         """
         self.debug('Load Configuration')
-        if os.path.exists(self.confFile):
-            conf = None
-            with open(self.confFile, 'r') as f:
-                conf = json.load(f)
-            rewrite = False
-            keys = ['username', 'identFile', 'host', 'port', 'cache', 'cacheUp', 'cacheDown', 'clientFile', 'keyFile', 'syncFolder', 'serverpath', 'compression', 'encryption']
-            for key in keys:
-                try:
-                    exec('self.{} = conf[\'{}\']'.format(key, key))
-                except KeyError as e:
-                    self.debug('  KeyError: {}'.format(e))
-                    rewrite = True
-            if rewrite:
-                self.storeConfiguration()
-        else:
+        conf = None
+        with open(self.confFile, 'r') as f:
+            conf = json.load(f)
+        rewrite = False
+        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cacheUp', 'cacheDown', 'clientLog', 'keyFile', 'syncFolder', 'serverpath', 'compression', 'encryption']
+        for key in keys:
+            try:
+                exec('self.{} = conf[\'{}\']'.format(key, key))
+            except KeyError as e:
+                self.debug('  KeyError: {}'.format(e))
+                rewrite = True
+        if rewrite:
             self.storeConfiguration()
 
 
@@ -233,7 +240,7 @@ class CloudZec:
                 'cache':self.cache,
                 'cacheUp':self.cacheUp,
                 'cacheDown':self.cacheDown,
-                'clientFile':self.clientFile,
+                'clientLog':self.clientLog,
                 'keyFile':self.keyFile,
                 'syncFolder':self.syncFolder,
                 'serverpath':self.serverpath,
@@ -250,7 +257,6 @@ class CloudZec:
 
         @param genMasterKey: If True, master key is generated if not avaliable
         @type genMasterKey: bool
-        @return: Returns master key
         """
         self.debug('Load master key')
         if os.path.exists(self.keyFile):
@@ -264,12 +270,12 @@ class CloudZec:
                 self.masterKey = self.genSymKey()
                 self.storeMasterKey()
             else:
-                raise Exception('No master key found and i am not allowed to generate a new one')
+                raise Exception('No master key found and I am not allowed to generate a new one')
 
 
     def storeMasterKey(self):
         """
-        Stores master key (into self.keyFile)
+        Stores master key into self.keyFile
         """
         self.debug('Store master key')
         #gpgkey = self.getGpgKey()
@@ -294,17 +300,17 @@ class CloudZec:
         return ''.join(random.choice(chars) for i in range(length))
 
 
-    def loadClientFile(self):
+    def loadClientLog(self):
         """
-        Loads hist3 from self.clientFile and returns it
+        Loads client.log from self.clientLog and returns it
 
-        @return: Returns client hist3 list
+        @return: Returns list in l6-format
         """
+        self.debug('Load client.log')
         client = []
-        self.debug('Load client hist3 file')
         if os.path.exists(self.clientFile):
             data = None
-            with open(self.clientFile, 'r') as f:
+            with open(self.clientLog, 'r') as f:
                 data = f.read()
                 client = json.loads(data)
         else:
@@ -313,15 +319,15 @@ class CloudZec:
         return client
 
 
-    def storeClientFile(self, client):
+    def storeClientLog(self, log):
         """
-        Stores client into self.clientFile
+        Stores client into self.clientLog
 
-        @param client: hist3 variable
-        @type client: list
+        @param log: list in l6 format
+        @type log: list
         """
-        self.debug('Store client hist3 file')
-        with open(self.clientFile, 'w') as f:
+        self.debug('Store client.log')
+        with open(self.clientLog, 'w') as f:
             json.dump(client, f, indent=2)
 
 
@@ -362,7 +368,7 @@ class CloudZec:
         Disconnects from server
 
         """
-        self.debug('Disconnecting from server')
+        self.debug('Disconnect from server')
         self.sftp.close()
         self.transport.close()
 
@@ -373,13 +379,12 @@ class CloudZec:
 
         @return: Returns the name of the device which locked the server
         """
+        self.debug('Get lock name')
         self.sftp.chdir(self.serverpath)
         name = None
         with self.sftp.open('lock', 'r') as f:
-            name = f.read()
-            #name = name.decode(encoding='UTF-8')
-            name = name.decode('utf-8') # convert bytes to string
-            name = name.split('\n')[0]  # get first line
+            data = f.read()
+            name = json.loads(data)
         return name
 
 
@@ -397,7 +402,7 @@ class CloudZec:
                 raise Exception('  Cannot lock server directory (locked by {})'.format(name))
         else:
             with self.sftp.open('lock', 'w') as f:
-                f.write(self.device)
+                json.dump(self.device, f)
 
 
     def unlock(self, override=False):
@@ -420,53 +425,53 @@ class CloudZec:
             self.debug('  Server is not locked')
 
 
-    def compress(self, fin):
-        """
-        Compress a file
-
-        @param fin: File input path, must be within self.syncFolder, can either be relative or absolute
-        @type fin: str
-        @return: Absolute path to compressed file (within cacheUp)
-        """
-        self.debug('Compressing file: {}'.format(fin))
-        hashsum = self.getHash(fin)
-        # Select compression mode
-        modes = {'lzma' : 'w:xz',
-                 'bzip2': 'w:bz2',
-                 'gzip' : 'w:gz',
-                 None   : 'w'
-                 }
-        mode = modes[self.compression]
-        if mode is None: # Fallback
-            self.debug(' Using fallback, no compression')
-            mode = 'w'
-        #if not fin.startswith(self.syncFolder):
-        #    while fin.startswith('/'):  # This is neccessary: > os.path.join('/one', '/two')
-        #        fin = fin[1:]           #                     > '/two'
-        #    fin = os.path.join(self.syncFolder, fin)
-        fin = os.path.join(self.syncFolder, fin)
-        fout = os.path.join(self.cacheUp, hashsum)
-        with tarfile.open(fout, mode) as f:  # Use tarfile.open() instead of tarfile.TarFile() [look at the python docs for a reason]
-            arcname = fin.replace(self.syncFolder, '', 1)
-            f.add(fin, arcname)
-        return fout
-
-
-    def decompress(self, fin, delete=True):
-        """
-        Decompresses a file into self.syncFolder
-
-        @param fin: File input path, must be within self.cacheDown, can either be relative or absolute
-        @type fin: str
-        @param delete: If True, after decompressing the file will be removed
-        @type delete: bool
-        """
-        if not fin.startswith(self.cacheDown):
-            fin = os.path.join(self.cacheDown, fin)
-        with tarfile.open(fin, 'r') as f:   # We don't need to set a decompression algorithm
-            f.extractall(self.syncFolder)   # Direct extract into self.syncFolder
-        if delete:
-            os.remove(fin)
+    #def compress(self, fin):
+    #    """
+    #    Compress a file
+    #
+    #    @param fin: File input path, must be within self.syncFolder, can either be relative or absolute
+    #    @type fin: str
+    #    @return: Absolute path to compressed file (within cacheUp)
+    #    """
+    #    self.debug('Compressing file: {}'.format(fin))
+    #    hashsum = self.getHash(fin)
+    #    # Select compression mode
+    #    modes = {'lzma' : 'w:xz',
+    #             'bzip2': 'w:bz2',
+    #             'gzip' : 'w:gz',
+    #             None   : 'w'
+    #             }
+    #    mode = modes[self.compression]
+    #    if mode is None: # Fallback
+    #        self.debug(' Using fallback, no compression')
+    #        mode = 'w'
+    #    #if not fin.startswith(self.syncFolder):
+    #    #    while fin.startswith('/'):  # This is neccessary: > os.path.join('/one', '/two')
+    #    #        fin = fin[1:]           #                     > '/two'
+    #    #    fin = os.path.join(self.syncFolder, fin)
+    #    fin = os.path.join(self.syncFolder, fin)
+    #    fout = os.path.join(self.cacheUp, hashsum)
+    #    with tarfile.open(fout, mode) as f:  # Use tarfile.open() instead of tarfile.TarFile() [look at the python docs for a reason]
+    #        arcname = fin.replace(self.syncFolder, '', 1)
+    #        f.add(fin, arcname)
+    #    return fout
+    #
+    #
+    #def decompress(self, fin, delete=True):
+    #    """
+    #    Decompresses a file into self.syncFolder
+    #
+    #    @param fin: File input path, must be within self.cacheDown, can either be relative or absolute
+    #    @type fin: str
+    #    @param delete: If True, after decompressing the file will be removed
+    #    @type delete: bool
+    #    """
+    #    if not fin.startswith(self.cacheDown):
+    #        fin = os.path.join(self.cacheDown, fin)
+    #    with tarfile.open(fin, 'r') as f:   # We don't need to set a decompression algorithm
+    #        f.extractall(self.syncFolder)   # Direct extract into self.syncFolder
+    #    if delete:
+    #        os.remove(fin)
 
 
     def encrypt(self, fin, fout):
@@ -478,6 +483,9 @@ class CloudZec:
         @param fout: File output path, must be absolute
         @ type fout: str
         """
+        self.debug('Encrypt file')
+        self.debug('  fin : {}'.format(fin))
+        self.debug('  fout: {}'.format(fout))
         raise Exception('Not implemented')
 
 
@@ -490,47 +498,75 @@ class CloudZec:
         @param fout: File output path, must be absolute
         @ type fout: str
         """
+        self.debug('Decrypt file')
+        self.debug('  fin : {}'.format(fin))
+        self.debug('  fout: {}'.format(fout))
         raise Exception('Not implemented')
 
 
-    def getHash(self, uri): #, hashtype='sha256'):
+    def getHashOfFile(self, path_absolute):
         """
-        Generates hashsum of a file
+        Generates hashsum of a file and returns it
 
-        @param uri: path to the file (relative or absolute)
-        @type uri: str
-        @return: Returns hashsum of file in .hexdigest() format
+        @param path: path to the file (absolute)
+        @type path: str
+        @return: Returns hash_of_file, hash_all, both in .hexdigest()-format
         """
-        #@param hash: Type of hashsum, can be md5, sha1, sha224, sha256, sha384 or sha512
-        #@type hash: str
-        #@return: Returns hashsum of file including hashtype
-        #"""
-        hashtype = 'sha256'
-        # Make absolute path
-        if not uri.startswith(self.syncFolder):
-            while uri.startswith('/'):  # This is neccessary: > os.path.join('/one', '/two')
-                uri = uri[1:]           #                     > '/two'
-            uri = os.path.join(self.syncFolder, uri)
+        self.debug('Get hash of file: {}'.format(path_absolute))
         # Get relative path
-        uriRel = uri.replace(self.syncFolder, '', 1)
-        while uriRel.startswith('/'):
-            uriRel = uriRel[1:]
-        # Generate hashsum of file
-        hashsumFile = eval('hashlib.{}()'.format(hashtype.lower())) # executes for example „h = hashlib.sha256()“
-        with open(uri, mode='rb') as f: # With updating the hashsum, the file size can be higher than the avaliable RAM
+        path_relative = path_absolute.split(self.syncFolder)[1][1:]
+        # Create hashsum of file
+        exec('hash_file = hashlib.{}()'.format(self.hashalgorithm)) # Executes for example h = hashlib.sha256(), hash algorithm is set via self.hashalgorithm() in __init__()
+        with open(path_absolute, mode='rb') as f:
             while True:
-                buf = f.read(4096)      # Maybe increase bufsize to get higher speed?!
+                buf = f.read(4096) # Maybe increase buf-size for higher speed?!
                 if not buf:
                     break
-                hashsumFile.update(buf)
-        hashsumAll = eval('hashlib.{}()'.format(hashtype.lower()))
-        text = '{}{}'.format(uriRel, hashsumFile.hexdigest())
-        hashsumAll.update(text.encode('utf-8'))
-        #self.debug('Generated Hashsum')
-        #self.debug('  Hashsum file: {}'.format(hashsumFile.hexdigest()))
-        #self.debug('  Hashsum all : {}'.format(hashsumAll.hexdigest()))
-        #self.debug('  Relpath     : {}'.format(uriRel))
-        return hashsumAll.hexdigest()
+                hash_file.update(buf)
+        # Create hashsum of "path+hash_file"
+        exec('hash_all = hashlib.{}()'.format(self.hashalgorithm))  # Executes for example h = hashlib.sha256(), hash algorithm is set via self.hashalgorithm() in __init__()
+        text = '{}{}'.format(path_relative, hash_file.hexdigest())
+        hash_all.update(text.encode('utf-8'))    
+        return hash_file.hexdigest(), hash_all.hexdigest()
+
+
+    def genDictFromL6(self, l6):
+        """
+        Generates a dictionary from an l6 formatted list
+
+        @param l6: L6 style list
+        @type l6: list
+        @return: Returns a dictionary
+        """
+        self.debug('Generate dict from l6-format list')
+        l6.sort() # Sort by timestamp
+        d = dict()
+        for item in l6:
+            if item[4] == '+':
+                timestamp = item[0]
+                hash_all = item[1]
+                relative_path = item[2]
+                hash_file = item[3]
+                key = item[5]
+                d[relative_path] = {'timestamp':timestamp, 'hash_all':hash_all, 'hash_file':hash_file, 'key':key}
+            elif item[4] == '-':
+                relative_path = item[2]
+                if relative_path in d:
+                    del d[relative_path]
+            else:
+                print('Don\'t know how to handle this: {}'.format(item[4]))
+        return d
+
+
+    def getRealFiles(self, compare_l6=None):
+        """
+        Returns a l6 formatted list of all files that are really in self.syncFolder
+
+        @param compare_l6: If None, every file needs to be hashed. With a comprehension list the timestamp is used and a hash is only generated if the timestamps don't match
+        @type compare_l6: list
+        @return: l6-formatted list of all files that are really in self.syncFolder
+        """
+        raise
 
 
     def sync(self):
@@ -538,106 +574,64 @@ class CloudZec:
         Full sync between client and server
         """
         self.debug('Full sync')
-        # Load hist3 from file, load real hist3, merge and save
-        hist_file = self.loadClientFile()
-        hist_real = self.getLocalFiles()
-        hist_new = self.mergeHist3Lists(hist_file, hist_real)
-        self.storeClientFile(hist_new)
+        # 
+        client_l6 = None # l6 format of client.log
+        real_l6   = None # l6 format of the files that are really in self.syncFolder
+        # If client.log exists
+        if os.path.exists(self.clientLog):
+            # Open client.log
+            with open(self.clientLog, 'r') as f:
+                client_l6 = json.load(f)
+            # Load real files
+            real_l6 = self.getRealFiles(client_l6)
+            # Merge
+            
+            # Store
+
+        # If client.log doesn't exist
+        else:
+            # Load real files
+
+            # Store
+
+           
+
+        #if not os.path.exists(self.clientLog):
+        #    with open(self.clientLog, 'w') as f:
+        #        json.dump(real_l6, f, indent=2)
+        #else:
+        #    with open(path_logfile, 'r') as f:
+        #        log_state_list = json.load(f)
 
 
 
-
-
-        # Load server history
-        #server_hist = None
+        # Merge client and real files
+        
+        # Store
 
         # Connect
 
         # Lock
 
-        # Load server changes
+        # If locked:
 
-        # 3 way merge (local changes have prio)
-
-        # Apply changes:
-            # For change in changes...
-
-        # Synchronize client-server file
-
-        # Cleanup on server?
-
-        # Unlock
+            # Load server list
+            server_l6 = None # l6 format of server.log
+    
+            # Merge server and client
+    
+            # Create diff between client and server
+    
+            # Download/Upload files
+    
+            # Upload new server.log
+    
+            # Unlock
 
         # Disconnect
 
         # Done
 
-
-    def mergeHist3Lists(self, hist3_1, hist3_2):
-        """
-        Merges 2 hist3 lists
-
-        @return: Returns new, merged hist3 file
-        """
-        # Merge
-        hist3_unified = hist3_1
-        hist3_unified.extend(hist3_2)
-        # Sort by time
-        # time is the first value of each list, so we don't need an extra sort function like the following
-        # sort_by_index = sorted(hist3_unified, key=lambda x: x[1])
-        hist3_unified.sort()
-        # Cleanup
-        hist3_new = []
-
-
-
-        # Done
-
-        raise
-
-
-
-    def getHashFromHist3(self, hist3):
-        """
-        Returns only the hashvalues from a hist3 list
-
-        @return: list of hashsums
-        """
-        hashsums = []
-        for item in hist3:
-            hashsum = item[1]
-            if hashsum.startswith('+'):
-                hashsums.append(hashsum[1:])
-            elif hashsum.startswith('-'):
-                if hashsum[1:] in hashsums:
-                    hashsums.remove(hashsum[1:])
-                else:
-                    self.debug('Tried to remove an invalid hashsum: {}'.format(hashsum))
-            else:
-                self.debug('I have no idea what to do with this: {}'.format(hashsum))
-        return hashsums
-
-
-    def getLocalFiles(self):
-        """
-        Returns a list of all files in self.syncFolder
-
-        @return: List of files with relative pathes
-        """
-        # Get all files
-        files = []
-        for root, dirnames, filenames in os.walk(self.syncFolder):
-            for filename in filenames:
-                files.append(os.path.join(root, filename))
-        # Create history like things [time.time(), '+hash', 'folder/file', 'key']
-        hist = []
-        for item in files:
-            hash = self.getHash(item)
-            relativePath = item.split(self.syncFolder)[1][1:]
-            hist.append([time.time(), '+{}'.format(hash), relativePath, None])
-            self.debug(hist[-1])
-        # Return that thing
-        return hist
 
 
     #def getGpgKey(self):
@@ -653,284 +647,3 @@ class CloudZec:
     #            gpgkey = key
     #            break
     #    return gpgkey
-
-
-    #def getKey(self, hashsum):
-    #    """
-    #    Returns key from self.allocation
-    #
-    #    @param hashsum: The hashsum to search for
-    #    @type hashsum: str
-    #    @return: Key for file with $hashsum
-    #    """
-    #    return self.allocation[hashsum][0]
-
-
-    #def setKey(self, hashsum, key):
-    #    """
-    #    Set (or update) key for $hashsum in self.allocation
-    #
-    #    @param hashsum: The hashsum where the key needs to be set
-    #    @type hashsum: str
-    #    @param key: The key for $hashsum
-    #    @type key: str
-    #    """
-    #    if hashsum in self.allocation:
-    #        self.allocation[hashsum][0] = key
-    #    else:
-    #        self.allocation[hashsum] = [key, None]
-
-
-    #def getUri(self, hashsum, allocation=None):
-    #    """
-    #    Returns uri from self.allocation or, if allocation is not None, from allocation parameter
-    #
-    #    @param hashsum: The hashsum to search for
-    #    @type hashsum: str
-    #    @return: Uri of file with $hashsum
-    #    """
-    #    if allocation is None:
-    #        return self.allocation[hashsum][1]
-    #    else:
-    #        if hashsum in allocation:
-    #            return allocation[hashsum]
-    #        else:
-    #            return self.allocation[hashsum][1]
-
-
-    #def setUri(self, hashsum, uri):
-    #    """
-    #    Set (or update) uri for $hashsum in self.allocation
-    #
-    #    @param hashsum: The hashsum where the uri needs to be set
-    #    @type hashsum: str
-    #    @param uri: The uri for $hashsum
-    #    @type uri: str
-    #    """
-    #    if hashsum in self.allocation:
-    #        self.allocation[hashsum][1] = uri
-    #    else:
-    #        self.allocation[hashsum] = [None, uri]
-
-
-    #def getKeyUri(self, hashsum):
-    #    """
-    #    Returns [key, uri] from self.allocation
-    #
-    #    @param hashsum: The hashsum to search for
-    #    @type hashsum: str
-    #    @return: [Key, Uri] for file with $hashsum
-    #    """
-    #    return self.allocation[hashsum]
-
-
-    #def setKeyUri(self, hashsum, key, uri):
-    #    """
-    #    Set (or update) key, uri for $hashsum in self.allocation
-    #
-    #    @param hashsum: The hashsum
-    #    @type hashsum: str
-    #    @param key: The key for $hashsum
-    #    @type key: str
-    #    @param uri: The uri for $hashsum
-    #    @type uri: str
-    #    """
-    #    self.allocation[hashsum] = [key, uri]
-
-
-    #def loadClientHistory(self):
-    #    """
-    #    Loads client history from self.historyFile and returns it
-    #
-    #    @return: Returns history (as list)
-    #    """
-    #    self.debug('Load client history')
-    #    if self.masterKey is None:
-    #        raise Exception('Master key is None')
-    #    data = None
-    #    with open(self.historyFile, 'r') as f:
-    #        data = f.read()
-    #    history = json.loads(str(self.gpg.decrypt(data, passphrase=self.masterKey)))
-    #    while '' in history:
-    #        history.remove('')
-    #    return history
-    #
-    #
-    #def storeClientHistory(self):
-    #    """
-    #    Stores client history from self.history
-    #    """
-    #    self.debug('Store client history')
-    #    if self.masterKey is None:
-    #        raise Exception('Master key is None')
-    #    data = str(self.gpg.encrypt(json.dumps(self.history), None, passphrase=self.masterKey, encrypt=False, symmetric=True, armor=True, cipher_algo=self.encryption))
-    #    with open(self.historyFile, 'w') as f:
-    #        f.write(data)
-
-
-    #def getClientChanges(self):
-    #    """
-    #    Returns a list (history) of all changes between self.loadClientHistory() and the real changes made
-    #
-    #    @return: Returns changes as history (list), dictionary with hashsum:uri
-    #    """
-    #    # Get the old files read from history
-    #    oldHashsums = self.getHashsumsFromHistory(self.loadClientHistory())
-    #    # Get the new files read from self.syncFolder's content
-    #    newAllocation = {} # hashsum:uri
-    #    newHashsums = []
-    #    pathes = self.getFilesFromPath(self.syncFolder)
-    #    for path in pathes:
-    #        hashsum = self.getHash(path)
-    #        newAllocation[hashsum] = path
-    #        newHashsums.append(hashsum)
-    #    # Get diff of hashsums
-    #    historyDiff = self.getDiffFromHashsum(oldHashsums, newHashsums)
-    #    # And return
-    #    return historyDiff, newAllocation
-
-
-    #def getClientChanges2(self):
-    #    """
-    #    Returns a list (history) of all changes between self.loadClientHistory2() and the real made changes
-    #
-    #    @return: Returns changes as history (list), dictionary with hashsum:uri
-    #    """
-    #    # Get the old files read from history
-    #    oladHashsums = self.getHashsumsFromHistory2(self.loadClientHistory2())
-    #    # Get the new files read from self.syncFolders content
-    #    newAllocation = {} # hashsum:uri
-    #    newHashsums = []
-    #    pathes = self.getFilesFromPath(self.syncFolder)
-    #    for path in pathes:
-    #        hashsum = self.getHash(path)
-    #        newAllocation[hashsum] = path
-    #        newHashsums.append(hashsum)
-    #    # Get diff of hashsums
-    #    historyDiff = self.getDiffFromHashsum(oldHashsums, newHashsums)
-    #    # And return
-    #    return historyDiff, newAllocation
-
-
-    #def getDiffFromHashsum(self, oldHashsums, newHashsums):
-    #    """
-    #    Returns a history-like diff of hashsums
-    #
-    #    @param oldHashsums: List of hashsums, the „older“ version
-    #    @type oldHashsums: list
-    #    @param newHashsums: List of hashsums, the „newer“ or prior version
-    #    @type newHashsums: list
-    #    @return: History like diff of hashsums
-    #    """
-    #    history = []
-    #    for hashsum in oldHashsums:
-    #        if not hashsum in newHashsums:
-    #            history.append('-{}'.format(hashsum))
-    #    for hashsum in newHashsums:
-    #        if not hashsum in oldHashsums:
-    #            history.append('+{}'.format(hashsum))
-    #    return history
-
-
-    #def getHashsumsFromHistory(self, history):
-    #    """
-    #    Returns a list of hashsums (extracted from history)
-    #
-    #    @param history: history
-    #    @type history: list
-    #    @return: List of hashsums
-    #    """
-    #    hashsums = []
-    #    for entry in history:
-    #        if entry.startswith('+'):
-    #            hashsums.append(entry[1:])
-    #        elif entry.startswith('-'):
-    #            hashsums.remove(entry[1:])
-    #        elif entry.startswith('?'):
-    #            hashsum1 = entry.split(' ')[0][1:]
-    #            hashsum2 = entry.split(' ')[1]
-    #            hashsums.remove(hashsum1)
-    #            hashsums.append(hashsum2)
-    #        else:
-    #            raise Exception('Don\'t know what to do: {}'.format(entry))
-    #    return hashsums
-
-
-    #def getHashsumsFromHistory2(self, history):
-    #    """
-    #    Returns a list of hashsums (extracted from history)
-    #
-    #    @param history: history
-    #    @type history: list
-    #    @return: List of hashsums
-    #    """
-    #    hashsums = []
-    #    for entry in history:
-    #        if entry[1].startswith('+'):
-    #            hashsums.append(entry[1:])
-    #        elif entry[1].startswith('-'):
-    #            hashsums.remove(entry[1:])
-    #        #elif entry[1].startswith('?'):
-    #        #    hashsum1 = entry[1].split(' ')[0][1:]
-    #        #    hashsum2 = entry[1].split(' ')[1]
-    #        #    hashsums.remove(hashsum1)
-    #        #    hashsums.append(hashsum2)
-    #        else:
-    #            raise Exception('Don\'t know what to do: {}'.format(entry))
-    #    return hashsums
-
-
-    #def getFilesFromHistory(self, history, allocation=None):
-        #"""
-        #Returns a list of files (extracted from history)
-        #
-        #@param history: History
-        #@type history: list
-        #@param allocation: Alternative dictionary containing the hashsum:uri allocation
-        #@type allocation: dict
-        #@return: List of files
-        #"""
-        #files = []
-        #for entry in history:
-            #if entry.startswith('+'):
-                #uri = self.getUri(entry[1:], allocation)
-                #files.append(uri)
-            #elif hashsum.startswith('-'):
-                #uri = self.getUri(entry[1:], allocation)
-                #files.remove(uri)
-            #elif hashsum.startswith('?'):
-                #hashsum1 = entry.split(' ')[0][1:]
-                #hashsum2 = entry.split(' ')[1]
-                #uri1 = self.getUri(hashsum1, allocation)
-                #uri2 = self.getUri(hashsum2, allocation)
-                #files.remove(uri1)
-                #files.append(uri2)
-            #else:
-                #raise Exception('Don\'t know what to do: {}'.format(entry))
-        #return files
-
-
-    #def getFilesFromPath(self, path):
-    #    """
-    #    Returns a list of all files in path (including files in subdirectories)
-    #
-    #    @param path: Absolute path to search for files
-    #    @type path: str
-    #    @return: List of files with relative pathes
-    #    """
-    #    #for root, dirs, files in os.walk(self.conf['syncFolder']):
-    #    #    for item in files:
-    #    #        path = item #os.path.join(root, item)
-    #    #        hash = self.getHash(path)
-    #    #        fileDict[path] = hash
-    #    files = []
-    #    if not os.path.islink(path):
-    #        dirlist = os.listdir(path)
-    #        for item in dirlist:
-    #            if os.path.isdir(os.path.join(path, item)):
-    #                newpath = os.path.join(path, item)
-    #                files.extend(self.getFilesFromPath(newpath))
-    #            else:
-    #                newpath = os.path.join(path, item)
-    #                files.append(newpath)
-    #    return files

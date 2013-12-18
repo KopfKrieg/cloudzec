@@ -1,5 +1,10 @@
 ToDo-list:
 
+Prio:
+ - Seperate key from l6 format, save keys in extra format
+ - Use timestamp instead of hash to get file modifications (much faster)
+
+Other:
  - Provide a template for usage withing KDE, Gnome
  - Translations
  - Keyring integration
@@ -10,4 +15,4 @@ ToDo-list:
  - setMasterKey()
  - notify()
  - server cleanup function - remove old files n'shit no one needs anymore
- - don't use a compression within the encryption (gpg), compression is done while creating the archive
+ - use encryption within gpg if possible, save time with compress&encrypt in one batch
