@@ -2,19 +2,22 @@
 
 pkgname=python-gnupg
 _gitname=python-gnupg
-pkgver=1.2.2
+pkgver=1.2.5
 pkgrel=1
 pkgdesc="The gnupg module allows Python programs to make use of the functionality provided by the GNU Privacy Guard." 
 url="https://github.com/isislovecruft/python-gnupg"
 license=("GPL")
 arch=("any")
 depends=('python' 'gnupg' 'python-psutil')
-source=('git://github.com/isislovecruft/python-gnupg.git')
-md5sums=('SKIP')
+source=('git://github.com/isislovecruft/python-gnupg.git'
+        'patch_exceptions.diff')
+md5sums=('SKIP'
+         'bf81e1140041326fe7fa5dbb110e9e03')
 
 build() {
   cd $_gitname
   git checkout $pkgver
+  patch -uNp1 -i "${srcdir}/patch_exceptions.diff"
   python setup.py build
 }
 
