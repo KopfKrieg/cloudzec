@@ -17,7 +17,7 @@ import cloudzec
 
 
 ## Data
-DEBUG = True
+DEBUG = False
 BREAK = False
 
 
@@ -38,14 +38,19 @@ def debug(text):
 
 def main():
     ## Data
-    c = cloudzec.CloudZec(debug=DEBUG)
-    #cloud = Cloud(username='florian', password='~/.ssh/id_rsa', port=1337, fingerprint='5A5A3BDC', serverpath='/home/florian/cloudzec', genKeyFile=True, debug=True)
-
+    global DEBUG
     ## Arguments
     args = sys.argv[1:]
+    # Help    
     if 'help' in args or len(args) == 0:
         showHelp()
-    elif args[0] == 'sync':     # Sync with server (due to the way how CloudZec works it is not possible to just sync the client to the server or the other way round!)
+        return
+    # Debug
+    if 'debug' in args:
+        DEBUG = True
+    # Everything else
+    if args[0] == 'sync':     # Sync with server (due to the way how CloudZec works it is not possible to just sync the client to the server or the other way round!)
+        c = cloudzec.CloudZec(debug=DEBUG)
         c.sync()
     #elif 'serverinit' == args[0]:       # Initialise server, setup files, pubkeys, history and allocation
     #    serverinit(conf, gpgHandler)
@@ -54,6 +59,7 @@ def main():
     #elif args[0] == 'sync':             # Sync with the server
     #    c.sync()
     else:
+        print('Unknown argument „{}“'.format(args[0]))
         showHelp()
     ## Return
     return 0
