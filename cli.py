@@ -49,15 +49,15 @@ def main():
     if 'debug' in args:
         DEBUG = True
     # Everything else
-    if args[0] == 'sync':     # Sync with server (due to the way how CloudZec works it is not possible to just sync the client to the server or the other way round!)
+    if args[0] == 'sync':   # Sync with server (due to the way how CloudZec works it is not possible to just sync the client to the server or the other way round!)
         c = cloudzec.CloudZec(debug=DEBUG)
         c.sync()
+    elif args[0] == 'init': # Only create an instanze of class CloudZec() and run __init__()
+        c = cloudzec.CloudZec(genMasterKey=True, debug=DEBUG)
     #elif 'serverinit' == args[0]:       # Initialise server, setup files, pubkeys, history and allocation
     #    serverinit(conf, gpgHandler)
     #elif 'autoupload' == args[0]:       # Autoupload - watch for changes in CloudZec and sync them with the server (upload only)
     #    autoupload(conf, gpgHandler)
-    #elif args[0] == 'sync':             # Sync with the server
-    #    c.sync()
     else:
         print('Unknown argument „{}“'.format(args[0]))
         showHelp()
