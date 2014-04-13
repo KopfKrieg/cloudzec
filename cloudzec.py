@@ -53,7 +53,7 @@
 # |-- files
 # |-- lock
 # |-- remote.keys   (encrypted)
-# `-- server.log    (encrypted)
+# `-- remote.log    (encrypted) server.log
 #
 #
 ## Local structure
@@ -61,21 +61,21 @@
 # $confFolder
 #  .
 #  |-- cache
-#  |   |-- download
-#  |   `-- upload
+#  |   |-- pull     download
+#  |   `-- push     upload
 #  |-- local.keys
 #  |-- local.log    client.log
 #  |-- cloudzec.conf
 #  `-- masterkey
 #
 #
-## client.log and server.log | encrypted with masterkey | l4-format
+## local.log and remote.log | encrypted with masterkey | l4-format
 #
 # [
 #   [timestamp, 'path', 'hash_file', 'action'],
 # ]
 #
-## The l4-format is a list in the following specification
+## The l4-format is a list in the following specification, sorted by its timestamp (first element)
 #
 # List index
 # 0  - float  | Modification-time of the file in UNIX-format, from os.path.getmtime(path) or time.time()
@@ -93,8 +93,8 @@ import os
 import platform
 import random
 import string
-import tarfile
-import time
+#import tarfile
+#import time
 import errno
 import shutil
 # External
@@ -102,7 +102,7 @@ import gnupg
 import paramiko
 
 
-## Classes
+## Class
 class CloudZec:
     def __init__(self, username=None, identFile=None, host='cloudzec.org', port=22, fingerprint=None, serverPath=None, allocSync=True, genMasterKey=False, debug=False):
         ## Basic setup
@@ -124,7 +124,6 @@ class CloudZec:
         self.keyFile  = os.path.join(self.confFolder, 'key')             # Key file with masterkey, not encrypted
         self.keysFile = os.path.join(self.confFolder, 'keys')            # Keys file with keys, should be encrypted
         self.syncKeys = True    # Sync keys with the remote node only if self.syncKeys is True
-        #self.fingerprint = fingerprint  # Fingerprint of gpg key
         self.syncFolder = os.path.join(home, 'CloudZec')    # Local sync-folder
         self.serverPath = serverPath    # Path on server
         self.masterKey = None           # Masterkey for client.log/server.log and keys-file en/decryption
@@ -657,6 +656,7 @@ class CloudZec:
         Full sync between client and server
         """
         self.debug('Full sync')
+        ## Real files -> Local files
         # If client.log exists
         if os.path.exists(self.clientLog):
             # Open client.log
@@ -704,13 +704,11 @@ class CloudZec:
             real_l4 = self.getRealFilesl4()
             # Store
             self.storeLocalLog(real_l4)
+        ## Local files <-> Server files
         # Connect
         self.connect()
         # Lock
         self.lock()
-
-
-        ## Rewrite using a general solution
         # Open remote.log
         remote_l4 = []
         if self.remoteFileExists('server.log'):
@@ -762,6 +760,7 @@ class CloudZec:
         localNew_l4 = []
         localNew_l4.extend(local_l4)
         localNew_l4.extend(diff_l4)
+        localNew_l4.sort()
         # Store
         self.storeLocalLog(localNew_l4)
         ## Merge number 2: Update the remote repository
@@ -784,6 +783,7 @@ class CloudZec:
         remoteNew_l4 = []
         remoteNew_l4.extend(local_l4)
         remoteNew_l4.extend(diff_l4)
+        remoteNew_l4.sort()
         # Store
         serverLogPath = os.path.join(self.serverPath, 'server.log')
         with self.sftp.open(serverLogPath, 'w') as fOut:
@@ -821,69 +821,6 @@ class CloudZec:
                 enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='Uncompressed')
                 enc = enc.data # Just the encrypted data, nothing else
                 fOut.write(enc.decode('utf-8'))
-            
-
-
-
-
-        ## Old solution, using specific solutions
-        ## If server.log doesn't exist
-        #else:
-        #    # Open client.log
-        #    client_l4 = self.loadLocalLog()
-        #    # Generate dict
-        #    client_dict = self.genDictFroml4(client_l4)
-        #    # Diff for upload?!
-        #    diff_l4 = []
-        #
-        #    # Add
-        #    for path in client_dict:
-        #            timestamp = real_dict[path]['timestamp']
-        #            hash_file = real_dict[path]['hash_file']
-        #            diff_l4.append([timestamp, path, hash_file, '+'])
-        #    # Get entries that needs to be synced
-        #    itemSync = {}
-        #    for item in diff_l4:
-        #        if item[3] == '+':
-        #            hashFile = item[2]
-        #            path = item[1]
-        #            itemSync[hashFile] = path
-        #        else:
-        #            self.debug('Well, erm, shit: {}'.format(item))
-        #    # Sync every entry in itemSync
-        #    for item in itemSync:
-        #        self.debug('  Push {}'.format(item))
-        #        # Encrypt
-        #        localPath = self.encryptFile(itemSync[item], item, self.getKey(item))
-        #        # Push
-        #        remotePath = os.path.join(self.serverPath, 'files', item)
-        #        self.push(localPath, remotePath)
-        #        # Remove tmpfile
-        #        os.remove(localPath) 
-        #    ## Sync every entry in diff_l4
-        #    #for item in diff_l4:
-        #    #    #print(item)
-        #    #    if item[3] == '+':
-        #    #        self.debug('  Push {}'.format(item[2]))
-        #    #        # Encrypt
-        #    #        localPath = self.encryptFile(item[1], item[2], self.getKey(item[2]))
-        #    #        # Push
-        #    #        remotePath = os.path.join(self.serverPath, 'files', item[2])
-        #    #        self.push(localPath, remotePath)
-        #    #    else:
-        #    #        self.debug('Well, erm, shit: {}'.format(entry))
-        #    # Update server.log, this should happen on a per file basis
-        #    serverLogPath = os.path.join(self.serverPath, 'server.log')
-        #    # Store it encrypted, not unencrypted!
-        #    #with self.sftp.open(serverLogPath, 'w') as f:
-        #    #    json.dump(client_l4, f, indent=2) 
-        #    with self.sftp.open(serverLogPath, 'w') as fOut:
-        #        data = json.dumps(client_l4)
-        #        enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='Uncompressed')
-        #        enc = enc.data # Just the encrypted data, nothing else
-        #        fOut.write(enc.decode('utf-8'))
-
-
         # Unlock
         self.unlock()
         # Disconnect

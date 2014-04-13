@@ -1,0 +1,48 @@
+# CloudZec sync #
+
+CloudZec sync (Short „cloudzec“) is a synchronisation solution with end to end encryption, using stable technologies like gpg and sftp.
+
+Theoretically it could be used to sync with any kind of storage, but at the moment there is only sftp-support.
+
+## Warning ##
+
+This is still an early alpha version, full of bugs and features not even the developers know about.
+
+## Installation ##
+
+### General ###
+- Install python3
+- Install the python3 version of paramiko
+- Install somehow [python-gnupg](https://github.com/isislovecruft/python-gnupg)
+- Clone the repository
+- Run cli.py
+
+### Archlinux ###
+- Install python from [extra]
+- Install python-paramiko from [community]
+- Install python-gnupg-isis from AUR
+- Clone the repository
+- Run cli.py
+
+## Run CloudZec sync ##
+There are at the moment only a few options:
+- On the first start run ```cli.py init```
+- Edit your ~/.cloudzec/cloudzec.conf with your editor of choice
+- Prepare your sftp-server like this: ```mkdir -p ~/cloudzec/files```
+- Run ```cli.py sync``` for a first synchronisation
+
+## ToDo ##
+- Refactor everything
+- Keyring integration
+- Notify-integration for GNOME/KDE and other desktops
+- serverinit()-function
+- cleanup()-function
+- Translations?
+
+## License ##
+
+Look at the LICENSE file (short version: GPLv3+)
+
+## Website ##
+
+Yep, there's a website: [cloudzec.org](http://cloudzec.org)
