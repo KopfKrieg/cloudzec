@@ -504,7 +504,7 @@ class CloudZec:
         """
         Returns a l4 formatted list of all files that are really in self.syncFolder
 
-        @param comparel4: If None, every file needs to be hashed. With a list comprehension the timestamp is used and a hash is only generated if the timestamps don't match
+        @param comparel4: If None, every file needs to be hashed. With a list comprehension the timestamp is used and a hashsum is only generated if the timestamps don't match
         @type comparel4: list
         @return: l4-formatted list of all files that are really in self.syncFolder
         """
@@ -522,19 +522,18 @@ class CloudZec:
         for filename in files:
             timestamp = os.path.getmtime(filename)
             relativePath = filename.split(self.syncFolder)[1][1:]
-            hashFile = None
+            hashsum = None
             if relativePath in compareDict and self.useTimestamp is True:
                 self.debug('  Use timestamp comparison for {}'.format(relativePath))
                 if timestamp == compareDict[relativePath]['timestamp']:
                     self.debug('    They match! Speedup, yeah!')
-                    hashFile = compareDict[relativePath]['hashsum']
-                    
+                    hashsum = compareDict[relativePath]['hashsum']
                 else:  
                     self.debug('    They don\'t match, generate hashsum as fallback')
-                    hashFile = self.getHashOfFile(filename)
+                    hashsum = self.getHashOfFile(filename)
             else:
-                hashFile = self.getHashOfFile(filename)
-            l4.append([timestamp, relativePath, hashFile, '+'])
+                hashsum = self.getHashOfFile(filename)
+            l4.append([timestamp, relativePath, hashsum, '+'])
         # Return
         return l4
 
@@ -566,83 +565,71 @@ class CloudZec:
         self.sftp.put(localPath, remotePath, confirm=True)
 
 
-    # TODO: Refactor
-    def encryptFile(self, fin, fname, passphrase):
+    def encryptFile(self, pathIn, filename, passphrase, force=False):
         """
-        Reads the file from $fin, encrypts it with the $passphrase and stores it into $fout
-        If fin == fout the input file will be overwritten
+        Reads the file from pathIn, encrypts it with the passphrase and stores it into self.cachePush/filename.
+        Returns the path to the new file.
 
-        @param fin: Relative path for the input file
-        @type fin: str
-        @param fname: File name for output file, path is self.cachePush/fname
-        @type fout: str
+        @param pathIn: Relative path of the input file
+        @type pathIn: str
+        @param filename: File name for output file
+        @type filename: str
         @param passphrase: Passphrase for encryption
         @type passphrase: str
-        @return: Returns file output path ($self.cachePush/fname)
+        @param force: If True, the file will be written, no matter if it already exists or not
+        @type force: bool
+        @return: Returns file output path ($self.cachePush/filename)
         """
-        self.debug('Encrypt file: {}'.format(fin))
-        fread = os.path.join(self.syncFolder, fin)
-        fwrite = os.path.join(self.cachePush, fname)
+        self.debug('Encrypt file: {}'.format(pathIn))
+        pathIn = os.path.join(self.syncFolder, pathIn)
+        pathOut = os.path.join(self.cachePush, filename)
         # If file already exists, return
-        if os.path.exists(fwrite):
-            return fwrite
+        if os.path.exists(pathOut) and not force:
+            return pathOut
         # Else encrypt it
-        with open(fread, 'rb') as fstreamread:
-            binary = self.gpg.encrypt(fstreamread.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo='Uncompressed') # , output=fstreamwrite) # fails with buffer interface error
-            with open(fwrite, 'wb') as fstreamwrite:
-                fstreamwrite.write(binary.data)
+        with open(pathIn, 'rb') as fIn:
+            binary = self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo='Uncompressed') # , output=fstreamwrite) # fails with buffer interface error
+            with open(pathOut, 'wb') as fOut:
+                fOut.write(binary.data)
         # And return
-        return fwrite
+        return pathOut
 
     
-    # TODO: Refactor
-    def decryptFile(self, pathEnc, passphrase=None, cleanup=True):
+    def decryptFile(self, pathIn, passphrase=None, cleanup=True):
         """
-        Reads the file from $fIn, decrypts it and returns the path to the decrypted file
+        Reads the file from pathIn, decrypts it and returns the path to the decrypted file
 
-        @param fIn: Absolute path to the input file
-        @type fIn: str
+        @param pathIn: Absolute path to the input file
+        @type pathIn: str
         @param passphrase: Passphrase for decryption or None if key is in self.getKey()
         @type passphrase: str
         @param cleanup: If True, the input file will be removed after decryption 
         @type cleanup: bool
         """
-        fName = os.path.basename(pathEnc)
-        pathDec = os.path.join(self.cache, fName)
-        self.debug('Decrypt file: {}'.format(fName))
+        filename = os.path.basename(pathIn)
+        pathOut = os.path.join(self.cache, filename)
+        self.debug('Decrypt file: {}'.format(filename))
         if passphrase is None:
-            passphrase = self.getKey(fName)
-        with open(pathEnc, 'rb') as fIn:
+            passphrase = self.getKey(filename)
+        with open(pathIn, 'rb') as fIn:
             binary = self.gpg.decrypt(fIn.read(), passphrase=passphrase)    # TODO: Write direct to a file without using 2 streams
-            with open(pathDec, 'wb') as fOut:
+            with open(pathOut, 'wb') as fOut:
                 fOut.write(binary.data)
         if cleanup:
-            os.remove(pathEnc)
-        return pathDec
+            os.remove(pathIn)
+        return pathOut
         
-        
-        if os.path.exists(self.keysFile):
-            with open(self.keysFile, 'r') as fIn:
-                #enc = fIn.read()
-                #data = self.gpg.decrypt(enc, passphrase=self.masterKey)
-                #data = data.data # Just the encrypted data, nothing else
-                #self.keys = json.loads(data.decode('utf-8'))
-                self.keys = json.load(fIn)
-        else:
-            #self.keys = {}
-            self.storeKeys()
 
-
-    def remoteFileExists(self, serverPathRel):
+    def remoteFileExists(self, remotePathRel):
         """
-        Returns true if $self.remotePath/$serverPathRel exists
+        Returns True if $self.remotePath/remotePathRel exists
 
-        @param serverPathRel: The relative path to the file on the server
-        @type serverPathRel: str
+        @param remotePathRel: The relative path to the file on the server
+        @type remotePathRel: str
         @return: Returns True if the file exists and False if not
         """
         try:
-            self.sftp.stat(os.path.join(self.remotePath, serverPathRel))
+            self.sftp.stat(os.path.join(self.remotePath, remotePathRel))
         except IOError as e:
             if e.errno == errno.ENOENT: # No such file or directory | http://stackoverflow.com/questions/850749/check-whether-a-path-exists-on-a-remote-host-using-paramiko
                 return False
@@ -653,57 +640,74 @@ class CloudZec:
     # TODO: Refactor
     def sync(self):
         """
-        Full sync between client and server
+        Full sync between local and remote repository
         """
         self.debug('Full sync')
         ## Real files -> Local files
-        # If client.log exists
-        if os.path.exists(self.localLog):
-            # Open client.log
-            client_l4 = self.loadLocalLog()
-            # Load real files
-            real_l4 = self.getRealFilesl4(client_l4)
-            # Generate dicts
-            client_dict = self.genDictFroml4(client_l4)
-            real_dict = self.genDictFroml4(real_l4)
-            # Merge
-            diff_l4 = []
-            # Get removed
-            for key in client_dict:
-                if not key in real_dict:
-                    timestamp = client_dict[key]['timestamp']
-                    hashsum = client_dict[key]['hashsum']
-                    diff_l4.append([timestamp, key, hashsum, '-'])
-            # Get added and changed
-            for key in real_dict:
-                if key in client_dict:
-                    if real_dict[key]['timestamp'] == client_dict[key]['timestamp']:
-                        pass
-                    elif real_dict[key]['hashsum'] == client_dict[key]['hashsum']:
-                        pass
-                    else:
-                        timestamp = client_dict[key]['timestamp']
-                        hashsum = client_dict[key]['hashsum']
-                        diff_l4.append([timestamp, key, hashsum, '-'])
-                        timestamp = real_dict[key]['timestamp']
-                        hashsum = real_dict[key]['hashsum']
-                        diff_l4.append([timestamp, key, hashsum, '+'])
-                else:
-                    timestamp = real_dict[key]['timestamp']
-                    hashsum = real_dict[key]['hashsum']
-                    diff_l4.append([timestamp, key, hashsum, '+'])
-            # Merge lists
-            new_l4 = []
-            new_l4.extend(client_l4)
-            new_l4.extend(diff_l4)
-            # Store
-            self.storeLocalLog(new_l4)
-        # If client.log doesn't exist
-        else:
-            # Load real files
-            real_l4 = self.getRealFilesl4()
-            # Store
-            self.storeLocalLog(real_l4)
+        # Open local.log
+        local_l4 = self.loadLocalLog()
+        # Load real files
+        real_l4 = self.getRealFilesl4(local_l4)
+        # Generate dicts
+        local_dict = self.genDictFroml4(local_l4)
+        real_dict = self.genDictFroml4(real_l4)
+        # Generate diff
+        diff_l4 = self.createDiffFromDict(local_dict, real_dict)
+        # Merge lists
+        new_l4 = []
+        new_l4.extend(local_l4)
+        new_l4.extend(diff_l4)
+        # Store
+        self.storeLocalLog(new_l4)
+
+        ## If client.log exists
+        #if os.path.exists(self.localLog):
+        #    # Open client.log
+        #    client_l4 = self.loadLocalLog()
+        #    # Load real files
+        #    real_l4 = self.getRealFilesl4(client_l4)
+        #    # Generate dicts
+        #    client_dict = self.genDictFroml4(client_l4)
+        #    real_dict = self.genDictFroml4(real_l4)
+        #    # Merge
+        #    diff_l4 = []
+        #    # Get removed
+        #    for key in client_dict:
+        #        if not key in real_dict:
+        #            timestamp = client_dict[key]['timestamp']
+        #            hashsum = client_dict[key]['hashsum']
+        #            diff_l4.append([timestamp, key, hashsum, '-'])
+        #    # Get added and changed
+        #    for key in real_dict:
+        #        if key in client_dict:
+        #            if real_dict[key]['timestamp'] == client_dict[key]['timestamp']:
+        #                pass
+        #            elif real_dict[key]['hashsum'] == client_dict[key]['hashsum']:
+        #                pass
+        #            else:
+        #                timestamp = client_dict[key]['timestamp']
+        #                hashsum = client_dict[key]['hashsum']
+        #                diff_l4.append([timestamp, key, hashsum, '-'])
+        #                timestamp = real_dict[key]['timestamp']
+        #                hashsum = real_dict[key]['hashsum']
+        #                diff_l4.append([timestamp, key, hashsum, '+'])
+        #        else:
+        #            timestamp = real_dict[key]['timestamp']
+        #            hashsum = real_dict[key]['hashsum']
+        #            diff_l4.append([timestamp, key, hashsum, '+'])
+        #    # Merge lists
+        #    new_l4 = []
+        #    new_l4.extend(client_l4)
+        #    new_l4.extend(diff_l4)
+        #    # Store
+        #    self.storeLocalLog(new_l4)
+        ## If client.log doesn't exist
+        #else:
+        #    # Load real files
+        #    real_l4 = self.getRealFilesl4()
+        #    # Store
+        #    self.storeLocalLog(real_l4)
+
         ## Local files <-> Server files
         # Connect
         self.connect()
@@ -829,41 +833,41 @@ class CloudZec:
         self.debug('Full sync done') #*knocks itself on her virtual shoulder*')
 
 
-    def createDiffFromDict(self, old_dict, new_dict):
+    def createDiffFromDict(self, oldDict, newDict):
         """
-        Create a diff from the old_dict to new_dict
+        Create a diff from the oldDict to newDict
 
-        @param old_dict: Old dictionary
-        @type old_dict: dict
-        @param new_dict: New dictionary
-        @type new_dict: dict
+        @param oldDict: Old dictionary
+        @type oldDict: dict
+        @param newDict: New dictionary
+        @type newDict: dict
         @return: Returns the diff as l4 formatted list
         """
         self.debug('Create diff from dict')
         diff_l4 = []
         # Get removed
-        for key in old_dict:
-            if not key in new_dict:
-                timestamp = old_dict[key]['timestamp']
-                hashsum = old_dict[key]['hashsum']
+        for key in oldDict:
+            if not key in newDict:
+                timestamp = oldDict[key]['timestamp']
+                hashsum = oldDict[key]['hashsum']
                 diff_l4.append([timestamp, key, hashsum, '-'])
         # Get added and changed
-        for key in new_dict:
-            if key in old_dict:
-                if new_dict[key]['timestamp'] == old_dict[key]['timestamp']:
+        for key in newDict:
+            if key in oldDict:
+                if newDict[key]['timestamp'] == oldDict[key]['timestamp']:
                     pass
-                elif new_dict[key]['hashsum'] == old_dict[key]['hashsum']:
+                elif newDict[key]['hashsum'] == oldDict[key]['hashsum']:
                     pass
                 else:
-                    timestamp = old_dict[key]['timestamp']
-                    hashsum = old_dict[key]['hashsum']
+                    timestamp = oldDict[key]['timestamp']
+                    hashsum = oldDict[key]['hashsum']
                     diff_l4.append([timestamp, key, hashsum, '-'])
-                    timestamp = new_dict[key]['timestamp']
-                    hashsum = new_dict[key]['hashsum']
+                    timestamp = newDict[key]['timestamp']
+                    hashsum = newDict[key]['hashsum']
                     diff_l4.append([timestamp, key, hashsum, '+'])
             else:
-                timestamp = new_dict[key]['timestamp']
-                hashsum = new_dict[key]['hashsum']
+                timestamp = newDict[key]['timestamp']
+                hashsum = newDict[key]['hashsum']
                 diff_l4.append([timestamp, key, hashsum, '+'])
         # Return
         return diff_l4
