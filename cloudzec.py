@@ -126,7 +126,7 @@ class CloudZec:
         self.syncKeys = True            # Sync keys with the remote node only if self.syncKeys is True
         self.syncFolder = os.path.join(home, 'CloudZec')    # Local sync-folder
         self.remotePath = remotePath    # CloudZec-folder on remote device
-        self.masterKey = None           # Masterkey for client.log/server.log and keys-file en/decryption
+        self.masterKey = None           # Masterkey
         self.keys      = {}             # Keys for data en/decryption
         self.compression = 'Uncompressed'   # Preferred compression algorithm |lzma: slow compress, small file, very fast decompress |bzip2: fast compress, small file, fast decompress |gzip: big file, very fast compress, very fast decompress |Choose wisely
         self.encryption = 'AES256'      # Preferred encryption algorithm
@@ -666,10 +666,10 @@ class CloudZec:
         self.lock()
         # Open remote.log
         remote_l4 = []
-        if self.remoteFileExists('server.log'):
+        if self.remoteFileExists('remote.log'):
             remote_l4 = []
-            # Pull server.log and decrypt it
-            remoteLogPath = self.pull(os.path.join(self.remotePath, 'server.log'))
+            # Pull remote.log and decrypt it
+            remoteLogPath = self.pull(os.path.join(self.remotePath, 'remote.log'))
             localLogPath = self.decryptFile(remoteLogPath, passphrase=self.masterKey)
             # Read it
             with open(localLogPath, 'r') as fIn:
@@ -740,7 +740,7 @@ class CloudZec:
         remoteNew_l4.extend(diff_l4)
         remoteNew_l4.sort()
         # Store
-        serverLogPath = os.path.join(self.remotePath, 'server.log')
+        serverLogPath = os.path.join(self.remotePath, 'remote.log')
         with self.sftp.open(serverLogPath, 'w') as fOut:
             data = json.dumps(remoteNew_l4)
             enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='Uncompressed')
@@ -766,7 +766,7 @@ class CloudZec:
                     else:
                         print('Damnit, Keys don\'t match for {}'.format(key))
                 else:
-                    targetKeys[key] = self.keys[key]
+                    targetKeys[key] = remoteKeys[key]
             # Store local
             self.storeKeys(targetKeys)
             # And remote            
