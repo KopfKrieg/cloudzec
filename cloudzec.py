@@ -344,7 +344,7 @@ class CloudZec:
                 local = json.loads(data)
         else:
             local = []
-            self.storeClientFile(local)
+            self.storeLocalLog(local)
         return local
 
 
@@ -659,55 +659,6 @@ class CloudZec:
         new_l4.extend(diff_l4)
         # Store
         self.storeLocalLog(new_l4)
-
-        ## If client.log exists
-        #if os.path.exists(self.localLog):
-        #    # Open client.log
-        #    client_l4 = self.loadLocalLog()
-        #    # Load real files
-        #    real_l4 = self.getRealFilesl4(client_l4)
-        #    # Generate dicts
-        #    client_dict = self.genDictFroml4(client_l4)
-        #    real_dict = self.genDictFroml4(real_l4)
-        #    # Merge
-        #    diff_l4 = []
-        #    # Get removed
-        #    for key in client_dict:
-        #        if not key in real_dict:
-        #            timestamp = client_dict[key]['timestamp']
-        #            hashsum = client_dict[key]['hashsum']
-        #            diff_l4.append([timestamp, key, hashsum, '-'])
-        #    # Get added and changed
-        #    for key in real_dict:
-        #        if key in client_dict:
-        #            if real_dict[key]['timestamp'] == client_dict[key]['timestamp']:
-        #                pass
-        #            elif real_dict[key]['hashsum'] == client_dict[key]['hashsum']:
-        #                pass
-        #            else:
-        #                timestamp = client_dict[key]['timestamp']
-        #                hashsum = client_dict[key]['hashsum']
-        #                diff_l4.append([timestamp, key, hashsum, '-'])
-        #                timestamp = real_dict[key]['timestamp']
-        #                hashsum = real_dict[key]['hashsum']
-        #                diff_l4.append([timestamp, key, hashsum, '+'])
-        #        else:
-        #            timestamp = real_dict[key]['timestamp']
-        #            hashsum = real_dict[key]['hashsum']
-        #            diff_l4.append([timestamp, key, hashsum, '+'])
-        #    # Merge lists
-        #    new_l4 = []
-        #    new_l4.extend(client_l4)
-        #    new_l4.extend(diff_l4)
-        #    # Store
-        #    self.storeLocalLog(new_l4)
-        ## If client.log doesn't exist
-        #else:
-        #    # Load real files
-        #    real_l4 = self.getRealFilesl4()
-        #    # Store
-        #    self.storeLocalLog(real_l4)
-
         ## Local files <-> Server files
         # Connect
         self.connect()
