@@ -92,6 +92,7 @@ import json
 import os
 import platform
 import random
+import stat
 import string
 #import tarfile
 #import time
@@ -193,6 +194,46 @@ class CloudZec:
             self.storeConfiguration()
 
 
+    def remoteTreeRemove(self, remotePath):
+        """
+        Removes a complete filesystem-tree on the remote host. Be careful!
+        
+        @param remotePath: The remote path to delete
+        @type remotePath: str
+        """
+        for item in self.sftp.listdir_attr(remotePath):
+            newPath = os.path.join(remotePath, item.filename)
+            if stat.S_ISDIR(item.st_mode):
+                self.remoteTreeRemove(newPath)
+            else:
+                self.debug('  Removing {}'.format(newPath))
+                self.sftp.remove(newPath)
+        self.debug('  Removing {}'.format(remotePath))
+        self.sftp.rmdir(remotePath)
+
+
+    def remoteinit(self):
+        """
+        Initialises the remote host. Caution: Deletes everything!
+        """
+        self.debug('Remote init')
+        # Connect
+        self.connect()
+        # Lock
+        self.lock()
+        # If self.remotePath exists:
+        if self.remotePathExists():
+            # Clear everything in self.remotePath
+            self.remoteTreeRemove(self.remotePath)
+        # Setup self.remotePath
+        self.sftp.mkdir(self.remotePath)
+        self.sftp.mkdir(os.path.join(self.remotePath, 'files'))
+        # Unlock
+        self.unlock()
+        # Disconnect
+        self.disconnect()
+
+
     def debug(self, text):
         """
         Prints debug text if self._debug is True
@@ -208,7 +249,7 @@ class CloudZec:
         """
         Loads configuration from self.confFile and sets values (self.$variable)
         """
-        self.debug('Load Configuration')
+        self.debug('Load Configuration: {}'.format(self.confFile))
         conf = None
         with open(self.confFile, 'r') as fIn:
             conf = json.load(fIn)
@@ -228,7 +269,7 @@ class CloudZec:
         """
         Stores configuration into self.confFile (values read from self.$variable)
         """
-        self.debug('Store Configuration')
+        self.debug('Store Configuration: {}'.format(self.confFile))
         keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'serverPath', 'compression', 'encryption', 'useTimestamp']
         conf = {}
         for key in keys:
@@ -244,7 +285,7 @@ class CloudZec:
         @param genMasterKey: If True, master key will be generated if not avaliable
         @type genMasterKey: bool
         """
-        self.debug('Load master key')
+        self.debug('Load master key: {}'.format(self.masterKeyFile))
         if os.path.exists(self.masterKeyFile):
             data = None
             with open(self.masterKeyFile, 'r') as fIn:
@@ -262,7 +303,7 @@ class CloudZec:
         """
         Stores master key into self.masterKeyFile
         """
-        self.debug('Store master key')
+        self.debug('Store master key: {}'.format(self.masterKeyFile))
         with open(self.masterKeyFile, 'w') as fOut:
             json.dump(self.masterKey, fOut, sort_keys=True, indent=2)
 
@@ -271,7 +312,7 @@ class CloudZec:
         """
         Load self.keys from self.keysFile
         """
-        self.debug('Load keys')
+        self.debug('Load keys: {}'.format(self.keysFile))
         if os.path.exists(self.keysFile):
             with open(self.keysFile, 'r') as fIn:
                 #enc = fIn.read()
@@ -288,7 +329,7 @@ class CloudZec:
         """
         Store self.keys into self.keysFile
         """
-        self.debug('Store keys')
+        self.debug('Store keys: {}'.format(self.keysFile))
         if keys is not None:
             self.keys = keys
         # Either use open(self.keysFile, 'wb') or use enc.decode('utf-8'). Both are ugly hacks
@@ -308,6 +349,7 @@ class CloudZec:
         @param keyHash: str
         @return: Returns A key for en-/decryption
         """
+        self.debug('Get key: {}'.format(keyHash))
         if keyHash in self.keys:
             return self.keys[keyHash]
         else:
@@ -336,7 +378,7 @@ class CloudZec:
 
         @return: Returns list in l4 format
         """
-        self.debug('Load {}'.format(self.localLog))
+        self.debug('Load local log: {}'.format(self.localLog))
         local = []
         if os.path.exists(self.localLog):
             with open(self.localLog, 'r') as fIn:
@@ -355,7 +397,7 @@ class CloudZec:
         @param log: list in l4 format
         @type log: list
         """
-        self.debug('Store {}'.format(self.localLog))
+        self.debug('Store local log: {}'.format(self.localLog))
         with open(self.localLog, 'w') as f:
             json.dump(log, f, indent=2)
 
@@ -375,21 +417,21 @@ class CloudZec:
         if self.identFile is None:
             self.debug('  Use password login')
             try:
-                self._transport.connect(username=self.username, password=getpass.getpass('Password for remote host: '))
+                self._transport.connect(username=self.username, password=getpass.getpass('    Password for remote host: '))
             except paramiko.ssh_exception.BadAuthenticationType:
-                self.debug('Hm. Login with password doesn\'t work. Did you set „identFile“ in {}?'.format(self.confFile))
+                self.debug('      Hm. Login with password doesn\'t work. Did you set „identFile“ in {}?'.format(self.confFile))
                 raise
         else:
-            self.debug('  Use identity file login')
+            self.debug('  Use identity file for login')
             key = None
             identFile = os.path.expanduser(self.identFile)
             try:
                 key = paramiko.RSAKey.from_private_key_file(identFile)
             except paramiko.ssh_exception.PasswordRequiredException:
-                key = paramiko.RSAKey.from_private_key_file(identFile, password=getpass.getpass('Password for identity file: '))
+                key = paramiko.RSAKey.from_private_key_file(identFile, password=getpass.getpass('    Password for identity file: '))
             self._transport.connect(username=self.username, pkey=key)
         self.sftp = paramiko.SFTPClient.from_transport(self._transport)
-        self.debug('Connected to remote host: {}@{}:{}'.format(self.username, self.host, self.port))
+        self.debug('  Connected to remote host: {}@{}:{}'.format(self.username, self.host, self.port))
 
 
     def disconnect(self):
@@ -428,6 +470,7 @@ class CloudZec:
                 self.debug('  Already locked (from this device)')
             else:
                 self.debug('  Already locked (from {})'.format(name))
+                self.disconnect()
                 raise Exception('  Cannot lock remote directory (locked by {})'.format(name))
         else:
             with self.sftp.open('lock', 'w') as f:
@@ -449,6 +492,7 @@ class CloudZec:
                     self.sftp.remove('lock')
                     self.debug('  Overriding lock - removing it')
                 else:
+                    self.disconnect()
                     raise Exception('  Could not unlock remote directory')
         else:
             self.debug('  Remote host is not locked')
@@ -482,7 +526,7 @@ class CloudZec:
         @type l4: list
         @return: Returns a dictionary
         """
-        self.debug('Generate dict from l4-format list')
+        self.debug('Generate dict from l4 format list')
         l4.sort() # Sort by timestamp
         d = dict()
         for entry in l4:
@@ -546,6 +590,7 @@ class CloudZec:
         @type serverPath: str
         @return: Returns the absolute path of the local file 
         """
+        self.debug('Pull: {}'.format(remotePath))
         filename = os.path.basename(remotePath)
         localPath = os.path.join(self.cachePull, filename)
         # TODO: Use callback for resume on failed transfers http://www.lag.net/paramiko/docs/paramiko.SFTPClient-class.html#get
@@ -562,6 +607,7 @@ class CloudZec:
         @param remotePath: Absolute path of the remote file
         @type serverPath: str
         """
+        self.debug('Push: {} → {}'.format(localPath, remotePath))
         self.sftp.put(localPath, remotePath, confirm=True)
 
 
@@ -580,7 +626,7 @@ class CloudZec:
         @type force: bool
         @return: Returns file output path ($self.cachePush/filename)
         """
-        self.debug('Encrypt file: {}'.format(pathIn))
+        self.debug('Encrypt file: {} → {}'.format(pathIn, filename))
         pathIn = os.path.join(self.syncFolder, pathIn)
         pathOut = os.path.join(self.cachePush, filename)
         # If file already exists, return
@@ -620,7 +666,7 @@ class CloudZec:
         return pathOut
         
 
-    def remoteFileExists(self, remotePathRel):
+    def remotePathExists(self, remotePathRel=''):
         """
         Returns True if $self.remotePath/remotePathRel exists
 
@@ -628,6 +674,7 @@ class CloudZec:
         @type remotePathRel: str
         @return: Returns True if the file exists and False if not
         """
+        self.debug('Remote path exists: {}'.format(os.path.join(self.remotePath, remotePathRel)))
         try:
             self.sftp.stat(os.path.join(self.remotePath, remotePathRel))
         except IOError as e:
@@ -644,6 +691,7 @@ class CloudZec:
         """
         self.debug('Full sync')
         ## Real files -> Local files
+        self.debug('  Syncing real files and local files')
         # Open local.log
         local_l4 = self.loadLocalLog()
         # Load real files
@@ -659,14 +707,15 @@ class CloudZec:
         new_l4.extend(diff_l4)
         # Store
         self.storeLocalLog(new_l4)
-        ## Local files <-> Server files
+        ## Local files <-> Remote files
+        self.debug('  Syncing local files and remote files')
         # Connect
         self.connect()
         # Lock
         self.lock()
         # Open remote.log
         remote_l4 = []
-        if self.remoteFileExists('remote.log'):
+        if self.remotePathExists('remote.log'):
             remote_l4 = []
             # Pull remote.log and decrypt it
             remoteLogPath = self.pull(os.path.join(self.remotePath, 'remote.log'))
@@ -693,6 +742,7 @@ class CloudZec:
         local_dict = self.genDictFroml4(local_l4)
         target_dict = self.genDictFroml4(target_l4)
         ## Merge number 1: Update the local repository
+        self.debug('    Update the local repository')
         diff_l4 = self.createDiffFromDict(local_dict, target_dict)
         for item in diff_l4:
             if item[3] == '-':      # Remove from local repository
@@ -719,6 +769,7 @@ class CloudZec:
         # Store
         self.storeLocalLog(localNew_l4)
         ## Merge number 2: Update the remote repository
+        self.debug('    Update the remote repository')
         diff_l4 = self.createDiffFromDict(remote_dict, target_dict)
         for item in diff_l4:
             if item[3] == '-':
@@ -748,9 +799,10 @@ class CloudZec:
             fOut.write(enc.decode('utf-8'))
         ## Sync keys
         if self.syncKeys is True:
+            self.debug('    Sync keys')
             # Open remote.keys
             remoteKeys = {}
-            if self.remoteFileExists('remote.keys'):
+            if self.remotePathExists('remote.keys'):
                 remoteKeysPath = self.pull(os.path.join(self.remotePath, 'remote.keys'))
                 localKeysPath = self.decryptFile(remoteKeysPath, passphrase=self.masterKey)
                 with open(localKeysPath, 'r') as fIn:

@@ -15,27 +15,37 @@ This is still an early alpha version, full of bugs and features not even the dev
 - Install the python3 version of paramiko
 - Install somehow [python-gnupg](https://github.com/isislovecruft/python-gnupg)
 - Clone the repository
-- Run cli.py
+- Follow the instructions under „Run CloudZec sync“
 
 ### Archlinux ###
 - Install python from [extra]
 - Install python-paramiko from [community]
 - Install python-gnupg-isis from AUR
 - Clone the repository
-- Run cli.py
+- Follow the instructions under „Run CloudZec sync“
 
 ## Run CloudZec sync ##
-There are at the moment only a few options:
-- On the first start run ```cli.py init```
-- Edit your ~/.cloudzec/cloudzec.conf with your editor of choice
-- Prepare your sftp-server like this: ```mkdir -p ~/cloudzec/files```
-- Run ```cli.py sync``` for a first synchronisation
+
+### On the first start, do the following ###
+- Run ```./cli.py init```
+- Edit your config-file (under ```~/.cloudzec/cloudzec.conf```)
+- Run ```./cli.py remoteinit```
+- Done
+
+### General options ###
+There are only a few options for ```./cli.py```:
+- help → Shows the help
+- init → Initialises the local repository
+- remoteinit → Initialises the remote repository
+- sync → Full sync between remote and local repository
+- daemon [x] → Full sync between remote and local repository, „x“ is the time between full syncs in minutes, or 15 minutes if not specified
+- debug → Append „debug“ at the end of any command to get debug output, e.g. ```./cli sync debug``` or ```./cli daemon 10 debug```
 
 ## ToDo ##
-- Refactor everything
+- ~~Refactor everything~~
 - Keyring integration
 - Notify-integration for GNOME/KDE and other desktops
-- serverinit()-function
+- ~~remoteinit()-function~~
 - cleanup()-function
 - Translations?
 
