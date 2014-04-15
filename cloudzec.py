@@ -169,7 +169,6 @@ class CloudZec:
         # Check remotePath | Path like /home/$username/cloudzec on the remote device!
         if self.remotePath is None:
             self.debug('Create default remotePath')
-            # TODO: Use a relative path like ~/cloudzec/ on the server
             self.remotePath = os.path.join('/home', self.username, 'cloudzec')
             self.debug('  {}'.format(self.remotePath))
             rewrite = True
@@ -254,7 +253,7 @@ class CloudZec:
         with open(self.confFile, 'r') as fIn:
             conf = json.load(fIn)
         rewrite = False
-        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'serverPath', 'compression', 'encryption', 'useTimestamp']
+        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'remotePath', 'compression', 'encryption', 'useTimestamp']
         for key in keys:
             try:
                 exec('self.{} = conf[\'{}\']'.format(key, key))
@@ -270,7 +269,7 @@ class CloudZec:
         Stores configuration into self.confFile (values read from self.$variable)
         """
         self.debug('Store Configuration: {}'.format(self.confFile))
-        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'serverPath', 'compression', 'encryption', 'useTimestamp']
+        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'remotePath', 'compression', 'encryption', 'useTimestamp']
         conf = {}
         for key in keys:
             exec('conf[\'{}\'] = self.{}'.format(key, key))
@@ -367,7 +366,6 @@ class CloudZec:
         @return: Returns a safe random key
         """
         self.debug('Generate symmectric key')
-        # TODO: This is not fucking safe! (But still better than no key)
         chars = string.ascii_letters + string.digits + string.punctuation
         return ''.join(random.choice(chars) for i in range(length))
 
@@ -507,11 +505,11 @@ class CloudZec:
         @return: Returns hashsum in .hexdigest()-format
         """
         self.debug('Get hashsum of file: {}'.format(localPath))
-        #exec('hashsum = hashlib.{}()'.format(self.hashalgorithm)) # Executes for example h = hashlib.sha256(), hash algorithm is set via self.hashalgorithm() in __init__()
-        hashsum = hashlib.sha256() # TODO: Make it fucking dynamic!
+        #exec('hashsum = hashlib.{}()'.format(self.hashalgorithm)) # Executes for example h = hashlib.sha256(), hash algorithm is set via self.hashalgorithm in __init__()
+        hashsum = hashlib.sha256()
         with open(localPath, mode='rb') as fIn:
             while True:
-                buf = fIn.read(4096) # TODO: Maybe increase buffer-size for higher speed?!
+                buf = fIn.read(4096)
                 if not buf:
                     break
                 hashsum.update(buf)
@@ -593,7 +591,6 @@ class CloudZec:
         self.debug('Pull: {}'.format(remotePath))
         filename = os.path.basename(remotePath)
         localPath = os.path.join(self.cachePull, filename)
-        # TODO: Use callback for resume on failed transfers http://www.lag.net/paramiko/docs/paramiko.SFTPClient-class.html#get
         self.sftp.get(remotePath, localPath, callback=None)
         return localPath
 
@@ -658,7 +655,7 @@ class CloudZec:
         if passphrase is None:
             passphrase = self.getKey(filename)
         with open(pathIn, 'rb') as fIn:
-            binary = self.gpg.decrypt(fIn.read(), passphrase=passphrase)    # TODO: Write direct to a file without using 2 streams
+            binary = self.gpg.decrypt(fIn.read(), passphrase=passphrase)
             with open(pathOut, 'wb') as fOut:
                 fOut.write(binary.data)
         if cleanup:
@@ -684,7 +681,6 @@ class CloudZec:
         return True
 
 
-    # TODO: Refactor
     def sync(self):
         """
         Full sync between local and remote repository
@@ -723,6 +719,8 @@ class CloudZec:
             # Read it
             with open(localLogPath, 'r') as fIn:
                 remote_l4 = json.load(fIn)
+            # Remove tmpfile
+            os.remove(localLogPath)
         # Open local.log
         local_l4 = self.loadLocalLog()
         ## Create „target“ list using a fu***** bad algorithm
@@ -750,7 +748,6 @@ class CloudZec:
                 os.remove(os.path.join(self.syncFolder, item[1]))
             elif item[3] == '+':    # Add to local repository, pull from remote
                 self.debug('  Add to local repository: {}'.format(item[1]))
-                # TODO: Deduplication!
                 # Pull, decrypt and move
                 remoteFilePath = self.pull(os.path.join(self.remotePath, 'files', item[2]))
                 localFilePath = self.decryptFile(remoteFilePath, passphrase=self.getKey(item[2]))
@@ -777,7 +774,6 @@ class CloudZec:
                 # Do nothing at the moment :)
             elif item[3] == '+':    # Add to local repository, pull from remote
                 self.debug('  Add to remote repository: {}'.format(item[1]))
-                # TODO: Deduplication!
                 # Encrypt and push, remove tmp file
                 localPath = self.encryptFile(item[1], item[2], self.getKey(item[2]))
                 remotePath = os.path.join(self.remotePath, 'files', item[2])
@@ -807,6 +803,8 @@ class CloudZec:
                 localKeysPath = self.decryptFile(remoteKeysPath, passphrase=self.masterKey)
                 with open(localKeysPath, 'r') as fIn:
                     remoteKeys = json.load(fIn)
+                # Remove tmpfile
+                os.remove(localKeysPath)
             # Merge with local keys
             targetKeys = {}
             for key in self.keys:
