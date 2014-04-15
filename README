@@ -1,8 +1,13 @@
 # CloudZec sync #
 
-CloudZec sync (Short „cloudzec“) is a synchronisation solution with end to end encryption, using stable technologies like gpg and sftp.
+CloudZec sync (short „cloudzec“) is a free synchronisation solution with end-to-end encryption, based on stable technologies like GnuPG and SFTP.
 
-Theoretically it could be used to sync with any kind of storage, but at the moment there is only sftp-support.
+## Features ##
+- No additional server software required
+- End-to-end encryption
+- Free Software
+- Usable without any graphical user interface
+- Uses file based deduplication
 
 ## Warning ##
 
@@ -18,28 +23,25 @@ This is still an early alpha version, full of bugs and features not even the dev
 - Follow the instructions under „Run CloudZec sync“
 
 ### Archlinux ###
-- Install python from [extra]
-- Install python-paramiko from [community]
-- Install python-gnupg-isis from AUR
-- Clone the repository
+- Install cloudzec-git from AUR
 - Follow the instructions under „Run CloudZec sync“
 
 ## Run CloudZec sync ##
 
 ### On the first start, do the following ###
-- Run ```./cli.py init```
+- Run ```cloudzec init```
 - Edit your config-file (under ```~/.cloudzec/cloudzec.conf```)
-- Run ```./cli.py remoteinit```
+- Run ```cloudzec remoteinit```
 - Done
 
 ### General options ###
-There are only a few options for ```./cli.py```:
+There are only a few options for ```cloudzec```:
 - help → Shows the help
 - init → Initialises the local repository
 - remoteinit → Initialises the remote repository
 - sync → Full sync between remote and local repository
 - daemon [x] → Full sync between remote and local repository, „x“ is the time between full syncs in minutes, or 15 minutes if not specified
-- debug → Append „debug“ at the end of any command to get debug output, e.g. ```./cli sync debug``` or ```./cli daemon 10 debug```
+- debug → Append „debug“ at the end of any command to get debug output, e.g. ```cloudzec sync debug``` or ```cloudzec daemon 10 debug```
 
 ## ToDo ##
 - ~~Refactor everything~~
