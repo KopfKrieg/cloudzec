@@ -133,6 +133,7 @@ class CloudZec:
         self.encryption = 'AES256'      # Preferred encryption algorithm
         self.hashAlgorithm = 'sha256'   # Preferred hash algorithm from hashlib:  md5, sha1, sha224, sha256, sha384, sha512
         self.useTimestamp = True        # If true, a timestamp comparison is done instead of generating hashsums. This speed ups a lot but is not as good as comparing hashsums
+        self.cleanup = False            # If true, everything that is no longer needed will be removed from both, local and remote (not implemented yet, sorry). And even if impleneted: Use with caution!
         # Create confFolder if missing
         if not os.path.exists(self.confFolder):
             self.debug('Create confFolder {}'.format(self.confFolder))
@@ -253,7 +254,7 @@ class CloudZec:
         with open(self.confFile, 'r') as fIn:
             conf = json.load(fIn)
         rewrite = False
-        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'remotePath', 'compression', 'encryption', 'useTimestamp', 'hashAlgorithm']
+        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'remotePath', 'compression', 'encryption', 'useTimestamp', 'hashAlgorithm', 'cleanup']
         for key in keys:
             try:
                 exec('self.{} = conf[\'{}\']'.format(key, key))
@@ -269,7 +270,7 @@ class CloudZec:
         Stores configuration into self.confFile (values read from self.$variable)
         """
         self.debug('Store Configuration: {}'.format(self.confFile))
-        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'remotePath', 'compression', 'encryption', 'useTimestamp', 'hashAlgorithm']
+        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'remotePath', 'compression', 'encryption', 'useTimestamp', 'hashAlgorithm', 'cleanup']
         conf = {}
         for key in keys:
             exec('conf[\'{}\'] = self.{}'.format(key, key))
@@ -340,21 +341,26 @@ class CloudZec:
             json.dump(self.keys, fOut, sort_keys=True, indent=2)
 
 
-    def getKey(self, keyHash):
+    def getKey(self, keyHash, generateKey=True):
         """
         Return key for en-/decryption based on the given hash
 
         @param keyHash: The key/hash-value
         @param keyHash: str
+        @param generateKey: If True, a key will be generated if required. If False an exception will be thrown
+        @param keyHash: bool
         @return: Returns A key for en-/decryption
         """
         self.debug('Get key: {}'.format(keyHash))
         if keyHash in self.keys:
             return self.keys[keyHash]
         else:
-            self.keys[keyHash] = self.genSymKey()
-            self.storeKeys()
-            return self.keys[keyHash]
+            if generateKey:
+                self.keys[keyHash] = self.genSymKey()
+                self.storeKeys()
+                return self.keys[keyHash]
+            else:
+                raise Exception('No key found for {}'.format(keyHash))
 
 
     def genSymKey(self, length=32):
@@ -631,11 +637,11 @@ class CloudZec:
             return pathOut
         # Else encrypt it
         with open(pathIn, 'rb') as fIn:
-            with open(pathOut, 'wb') as fOut:
-                self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo='Uncompressed', output=fOut)
-            #binary = self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo='Uncompressed')
             #with open(pathOut, 'wb') as fOut:
-            #    fOut.write(binary.data)
+            #    self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo='Uncompressed', output=fOut)
+            binary = self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo='Uncompressed')
+            with open(pathOut, 'wb') as fOut:
+                fOut.write(binary.data)
         # And return
         return pathOut
 
@@ -655,7 +661,7 @@ class CloudZec:
         pathOut = os.path.join(self.cache, filename)
         self.debug('Decrypt file: {}'.format(filename))
         if passphrase is None:
-            passphrase = self.getKey(filename)
+            passphrase = self.getKey(filename, generateKey=False)
         with open(pathIn, 'rb') as fIn:
             binary = self.gpg.decrypt(fIn.read(), passphrase=passphrase)
             with open(pathOut, 'wb') as fOut:
@@ -741,6 +747,8 @@ class CloudZec:
         remote_dict = self.genDictFroml4(remote_l4)
         local_dict = self.genDictFroml4(local_l4)
         target_dict = self.genDictFroml4(target_l4)
+        ## Sync keys before syncing files, otherwise decryption with files from remote to local will throw an exception
+        self.syncKeysWithRemote(cleanup=False)
         ## Merge number 1: Update the local repository
         self.debug('    Update the local repository')
         diff_l4 = self.createDiffFromDict(local_dict, target_dict)
@@ -752,7 +760,7 @@ class CloudZec:
                 self.debug('  Add to local repository: {}'.format(item[1]))
                 # Pull, decrypt and move
                 remoteFilePath = self.pull(os.path.join(self.remotePath, 'files', item[2]))
-                localFilePath = self.decryptFile(remoteFilePath, passphrase=self.getKey(item[2]))
+                localFilePath = self.decryptFile(remoteFilePath, passphrase=self.getKey(item[2], generateKey=False))
                 localNewPath = os.path.join(self.syncFolder, item[1])
                 if not os.path.exists(os.path.dirname(localNewPath)):
                     os.makedirs(os.path.dirname(localNewPath))
@@ -796,8 +804,25 @@ class CloudZec:
             enc = enc.data # Just the encrypted data, nothing else
             fOut.write(enc.decode('utf-8'))
         ## Sync keys
+        self.syncKeysWithRemote(cleanup=self.cleanup)
+        # Unlock
+        self.unlock()
+        # Disconnect
+        self.disconnect()
+        # Done
+        self.debug('Full sync done') #*knocks itself on her virtual shoulder*')
+
+
+    def syncKeysWithRemote(self, cleanup=False):
+        """
+        Synchronises key with remote if self.syncKeys is True.
+        If cleanup is True, all key that are no longer needed will be removed, somehow.
+
+        @param cleanup: If True only required keys are stored
+        @type cleanup: bool
+        """
         if self.syncKeys is True:
-            self.debug('    Sync keys')
+            self.debug('Sync keys')
             # Open remote.keys
             remoteKeys = {}
             if self.remotePathExists('remote.keys'):
@@ -828,12 +853,6 @@ class CloudZec:
                 enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='Uncompressed')
                 enc = enc.data # Just the encrypted data, nothing else
                 fOut.write(enc.decode('utf-8'))
-        # Unlock
-        self.unlock()
-        # Disconnect
-        self.disconnect()
-        # Done
-        self.debug('Full sync done') #*knocks itself on her virtual shoulder*')
 
 
     def createDiffFromDict(self, oldDict, newDict):
