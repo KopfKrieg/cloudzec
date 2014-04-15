@@ -131,7 +131,7 @@ class CloudZec:
         self.keys      = {}             # Keys for data en/decryption
         self.compression = 'Uncompressed'   # Preferred compression algorithm |lzma: slow compress, small file, very fast decompress |bzip2: fast compress, small file, fast decompress |gzip: big file, very fast compress, very fast decompress |Choose wisely
         self.encryption = 'AES256'      # Preferred encryption algorithm
-        self.hashalgorithm = 'sha256'   # Preferred hash algorithm from hashlib:  md5, sha1, sha224, sha256, sha384, sha512
+        self.hashAlgorithm = 'sha256'   # Preferred hash algorithm from hashlib:  md5, sha1, sha224, sha256, sha384, sha512
         self.useTimestamp = True        # If true, a timestamp comparison is done instead of generating hashsums. This speed ups a lot but is not as good as comparing hashsums
         # Create confFolder if missing
         if not os.path.exists(self.confFolder):
@@ -253,7 +253,7 @@ class CloudZec:
         with open(self.confFile, 'r') as fIn:
             conf = json.load(fIn)
         rewrite = False
-        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'remotePath', 'compression', 'encryption', 'useTimestamp']
+        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'remotePath', 'compression', 'encryption', 'useTimestamp', 'hashAlgorithm']
         for key in keys:
             try:
                 exec('self.{} = conf[\'{}\']'.format(key, key))
@@ -269,7 +269,7 @@ class CloudZec:
         Stores configuration into self.confFile (values read from self.$variable)
         """
         self.debug('Store Configuration: {}'.format(self.confFile))
-        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'remotePath', 'compression', 'encryption', 'useTimestamp']
+        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'remotePath', 'compression', 'encryption', 'useTimestamp', 'hashAlgorithm']
         conf = {}
         for key in keys:
             exec('conf[\'{}\'] = self.{}'.format(key, key))
@@ -505,11 +505,11 @@ class CloudZec:
         @return: Returns hashsum in .hexdigest()-format
         """
         self.debug('Get hashsum of file: {}'.format(localPath))
-        #exec('hashsum = hashlib.{}()'.format(self.hashalgorithm)) # Executes for example h = hashlib.sha256(), hash algorithm is set via self.hashalgorithm in __init__()
-        hashsum = hashlib.sha256()
+        hashsum = eval('hashlib.{}()'.format(self.hashAlgorithm))   # Executes for example hashsum = hashlib.sha256()
+        #hashsum = hashlib.sha256()
         with open(localPath, mode='rb') as fIn:
             while True:
-                buf = fIn.read(4096)
+                buf = fIn.read(4096)    # Maybe increase buffer-size for higher speed?
                 if not buf:
                     break
                 hashsum.update(buf)
@@ -631,9 +631,11 @@ class CloudZec:
             return pathOut
         # Else encrypt it
         with open(pathIn, 'rb') as fIn:
-            binary = self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo='Uncompressed') # , output=fstreamwrite) # fails with buffer interface error
             with open(pathOut, 'wb') as fOut:
-                fOut.write(binary.data)
+                self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo='Uncompressed', output=fOut)
+            #binary = self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo='Uncompressed')
+            #with open(pathOut, 'wb') as fOut:
+            #    fOut.write(binary.data)
         # And return
         return pathOut
 
