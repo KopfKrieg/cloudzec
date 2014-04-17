@@ -105,7 +105,7 @@ import paramiko
 
 ## Class
 class CloudZec:
-    def __init__(self, username=None, identFile=None, host='cloudzec.org', port=22, remotePath=None, genMasterKey=False, debug=False):
+    def __init__(self, genMasterKey=False, debug=False):
         ## Basic setup
         # Data
         home = os.path.expanduser('~')
@@ -114,19 +114,19 @@ class CloudZec:
         self._debug = debug
         # Default configuration, use loadConfiguration() to override
         self.device = platform.node()   # Device name, neccessary for lock-name on server
-        self.username = username        # Username for server-login
-        self.identFile = identFile      # Identify file for server-login, None if passwordlogin is preferred over publickey
-        self.host = host                # Server host
-        self.port = port                # Server port
+        self.username = None            # Username for server-login
+        self.identFile = None           # Identify file for server-login, None if passwordlogin is preferred over publickey
+        self.host = 'cloudzec.org'      # Server host
+        self.port = 22                  # Server port
         self.cache = os.path.join(self.confFolder, 'cache')
-        self.cachePush = os.path.join(self.confFolder, 'cache', 'push')
-        self.cachePull = os.path.join(self.confFolder, 'cache', 'pull')
+        self.cachePush = os.path.join(self.cache, 'push')
+        self.cachePull = os.path.join(self.cache, 'pull')
         self.localLog = os.path.join(self.confFolder, 'local.log')
         self.masterKeyFile  = os.path.join(self.confFolder, 'masterKey')
         self.keysFile = os.path.join(self.confFolder, 'keys')
         self.syncKeys = True            # Sync keys with the remote node only if self.syncKeys is True
         self.syncFolder = os.path.join(home, 'CloudZec')    # Local sync-folder
-        self.remotePath = remotePath    # CloudZec-folder on remote device
+        self.remotePath = None          # CloudZec-folder on remote device
         self.masterKey = None           # Masterkey
         self.keys      = {}             # Keys for data en/decryption
         self.compression = 'Uncompressed'   # Preferred compression algorithm |lzma: slow compress, small file, very fast decompress |bzip2: fast compress, small file, fast decompress |gzip: big file, very fast compress, very fast decompress |Choose wisely
@@ -167,15 +167,6 @@ class CloudZec:
         if self.username is None:
             # Don't ask anything in __init__()
             raise Exception('You need to set a username in {}'.format(self.confFile))
-        # Check remotePath | Path like /home/$username/cloudzec on the remote device!
-        if self.remotePath is None:
-            self.debug('Create default remotePath')
-            self.remotePath = os.path.join('/home', self.username, 'cloudzec')
-            self.debug('  {}'.format(self.remotePath))
-            rewrite = True
-        # Rewrite if needed
-        if rewrite:
-            self.storeConfiguration()
         # Create gpg instance | needs to be defined before en/decrypting anything
         binary = '/usr/bin/gpg2' # No symlinks allowed
         homedir = os.path.join(home, '.gnupg')
@@ -254,7 +245,7 @@ class CloudZec:
         with open(self.confFile, 'r') as fIn:
             conf = json.load(fIn)
         rewrite = False
-        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'remotePath', 'compression', 'encryption', 'useTimestamp', 'hashAlgorithm', 'cleanup']
+        keys = ['cache', 'cleanup', 'compression', 'device', 'encryption', 'hashAlgorithm', 'host', 'identFile', 'masterKeyFile', 'port', 'remotePath', 'syncFolder', 'syncKeys', 'useTimestamp', 'username']
         for key in keys:
             try:
                 exec('self.{} = conf[\'{}\']'.format(key, key))
@@ -270,7 +261,7 @@ class CloudZec:
         Stores configuration into self.confFile (values read from self.$variable)
         """
         self.debug('Store Configuration: {}'.format(self.confFile))
-        keys = ['username', 'identFile', 'host', 'port', 'cache', 'cachePush', 'cachePull', 'localLog', 'keyFile', 'syncFolder', 'remotePath', 'compression', 'encryption', 'useTimestamp', 'hashAlgorithm', 'cleanup']
+        keys = ['cache', 'cleanup', 'compression', 'device', 'encryption', 'hashAlgorithm', 'host', 'identFile', 'masterKeyFile', 'port', 'remotePath', 'syncFolder', 'syncKeys', 'useTimestamp', 'username']
         conf = {}
         for key in keys:
             exec('conf[\'{}\'] = self.{}'.format(key, key))
@@ -436,6 +427,12 @@ class CloudZec:
             self._transport.connect(username=self.username, pkey=key)
         self.sftp = paramiko.SFTPClient.from_transport(self._transport)
         self.debug('  Connected to remote host: {}@{}:{}'.format(self.username, self.host, self.port))
+        # Check remotePath | Path like /home/$username/cloudzec on the remote device!
+        if self.remotePath is None:
+            self.debug('Create default remotePath')
+            self.remotePath = os.path.join(self.sftp.normalize('.'), 'cloudzec')
+            self.debug('  {}'.format(self.remotePath))
+            self.storeConfiguration()
 
 
     def disconnect(self):
@@ -586,32 +583,34 @@ class CloudZec:
         return l4
 
 
-    def pull(self, remotePath):
+    def pull(self, remotePathRel):
         """
-        Pulls a file from remotePath into self.cachePull/filename via SFTP
+        Pulls a file from self.remotePath/remotePathRel into self.cachePull/filename via SFTP
         
-        @param remotePath: Absolute path of the remote file
-        @type serverPath: str
+        @param remotePathRel: Relative path of the remote file
+        @type remotePathRel: str
         @return: Returns the absolute path of the local file 
         """
-        self.debug('Pull: {}'.format(remotePath))
-        filename = os.path.basename(remotePath)
+        self.debug('Pull: {}'.format(remotePathRel))
+        filename = os.path.basename(remotePathRel)
         localPath = os.path.join(self.cachePull, filename)
-        self.sftp.get(remotePath, localPath, callback=None)
+        remotePathAbs = os.path.join(self.remotePath, remotePathRel)
+        self.sftp.get(remotePathAbs, localPath, callback=None)
         return localPath
 
 
-    def push(self, localPath, remotePath):
+    def push(self, localPath, remotePathRel):
         """
-        Pushes a file from localPath to remotePath via SFTP
+        Pushes a file from localPath to self.remotePath/remotePathRel via SFTP
         
         @param localPath: Absolute path of the local file
         @type localPath: str
-        @param remotePath: Absolute path of the remote file
-        @type serverPath: str
+        @param remotePathRel: Relative path of the remote file
+        @type remotePathRel: str
         """
-        self.debug('Push: {} → {}'.format(localPath, remotePath))
-        self.sftp.put(localPath, remotePath, confirm=True)
+        self.debug('Push: {} → {}'.format(localPath, remotePathRel))
+        remotePathAbs = os.path.join(self.remotePath, remotePathRel)
+        self.sftp.put(localPath, remotePathAbs, confirm=True)
 
 
     def encryptFile(self, pathIn, filename, passphrase, force=False):
@@ -722,7 +721,7 @@ class CloudZec:
         if self.remotePathExists('remote.log'):
             remote_l4 = []
             # Pull remote.log and decrypt it
-            remoteLogPath = self.pull(os.path.join(self.remotePath, 'remote.log'))
+            remoteLogPath = self.pull('remote.log')
             localLogPath = self.decryptFile(remoteLogPath, passphrase=self.masterKey)
             # Read it
             with open(localLogPath, 'r') as fIn:
@@ -759,7 +758,7 @@ class CloudZec:
             elif item[3] == '+':    # Add to local repository, pull from remote
                 self.debug('  Add to local repository: {}'.format(item[1]))
                 # Pull, decrypt and move
-                remoteFilePath = self.pull(os.path.join(self.remotePath, 'files', item[2]))
+                remoteFilePath = self.pull(os.path.join('files', item[2]))
                 localFilePath = self.decryptFile(remoteFilePath, passphrase=self.getKey(item[2], generateKey=False))
                 localNewPath = os.path.join(self.syncFolder, item[1])
                 if not os.path.exists(os.path.dirname(localNewPath)):
@@ -786,7 +785,7 @@ class CloudZec:
                 self.debug('  Add to remote repository: {}'.format(item[1]))
                 # Encrypt and push, remove tmp file
                 localPath = self.encryptFile(item[1], item[2], self.getKey(item[2]))
-                remotePath = os.path.join(self.remotePath, 'files', item[2])
+                remotePath = os.path.join('files', item[2])
                 self.push(localPath, remotePath)
                 os.remove(localPath)
             else:
@@ -826,7 +825,7 @@ class CloudZec:
             # Open remote.keys
             remoteKeys = {}
             if self.remotePathExists('remote.keys'):
-                remoteKeysPath = self.pull(os.path.join(self.remotePath, 'remote.keys'))
+                remoteKeysPath = self.pull('remote.keys')
                 localKeysPath = self.decryptFile(remoteKeysPath, passphrase=self.masterKey)
                 with open(localKeysPath, 'r') as fIn:
                     remoteKeys = json.load(fIn)
