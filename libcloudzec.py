@@ -107,33 +107,32 @@ import paramiko
 class CloudZec:
     def __init__(self, genMasterKey=False, debug=False):
         ## Basic setup
-        # Data
+        self._debug = debug
+        # Standard pathes
         home = os.path.expanduser('~')
         self.confFolder = os.path.join(home, '.cloudzec')
         self.confFile = os.path.join(self.confFolder, 'cloudzec.conf')
-        self._debug = debug
-        # Default configuration, use loadConfiguration() to override
-        self.device = platform.node()   # Device name, neccessary for lock-name on server
-        self.username = None            # Username for server-login
-        self.identFile = None           # Identify file for server-login, None if passwordlogin is preferred over publickey
-        self.host = 'cloudzec.org'      # Server host
-        self.port = 22                  # Server port
-        self.cache = os.path.join(self.confFolder, 'cache')
-        self.cachePush = os.path.join(self.cache, 'push')
-        self.cachePull = os.path.join(self.cache, 'pull')
-        self.localLog = os.path.join(self.confFolder, 'local.log')
-        self.masterKeyFile  = os.path.join(self.confFolder, 'masterKey')
         self.keysFile = os.path.join(self.confFolder, 'keys')
-        self.syncKeys = True            # Sync keys with the remote node only if self.syncKeys is True
-        self.syncFolder = os.path.join(home, 'CloudZec')    # Local sync-folder
-        self.remotePath = None          # CloudZec-folder on remote device
+        self.localLog = os.path.join(self.confFolder, 'local.log')
+        # Empty vars
         self.masterKey = None           # Masterkey
         self.keys      = {}             # Keys for data en/decryption
+        # Default configuration, use loadConfiguration() to override
+        self.cache = os.path.join(self.confFolder, 'cache')
+        self.cleanup = False            # If true, everything that is no longer needed will be removed from both, local and remote (not implemented yet, sorry). And even if impleneted: Use with caution!
         self.compression = 'Uncompressed'   # Preferred compression algorithm |lzma: slow compress, small file, very fast decompress |bzip2: fast compress, small file, fast decompress |gzip: big file, very fast compress, very fast decompress |Choose wisely
+        self.device = platform.node()   # Device name, neccessary for lock-name on server
         self.encryption = 'AES256'      # Preferred encryption algorithm
         self.hashAlgorithm = 'sha256'   # Preferred hash algorithm from hashlib:  md5, sha1, sha224, sha256, sha384, sha512
+        self.host = 'cloudzec.org'      # Server host
+        self.identFile = None           # Identify file for server-login, None if passwordlogin is preferred over publickey
+        self.masterKeyFile  = os.path.join(self.confFolder, 'masterKey')
+        self.port = 22                  # Server port
+        self.remotePath = None          # CloudZec-folder on remote device
+        self.syncFolder = os.path.join(home, 'CloudZec')    # Local sync-folder
+        self.syncKeys = True            # Sync keys with the remote node only if self.syncKeys is True
         self.useTimestamp = True        # If true, a timestamp comparison is done instead of generating hashsums. This speed ups a lot but is not as good as comparing hashsums
-        self.cleanup = False            # If true, everything that is no longer needed will be removed from both, local and remote (not implemented yet, sorry). And even if impleneted: Use with caution!
+        self.username = None            # Username for server-login
         # Create confFolder if missing
         if not os.path.exists(self.confFolder):
             self.debug('Create confFolder {}'.format(self.confFolder))
@@ -141,10 +140,14 @@ class CloudZec:
         # If confFile does not exists: Write the sample configuration-file and return
         if not os.path.exists(self.confFile):
             self.storeConfiguration()
+            self.loadMasterKey(genMasterKey)
             return
         else:
             # Load configuration (and override defaults)
             self.loadConfiguration()
+        # After loading the config
+        self.cachePush = os.path.join(self.cache, 'push')
+        self.cachePull = os.path.join(self.cache, 'pull')
         ## Check configuration
         rewrite = False
         # Check folder: cache
