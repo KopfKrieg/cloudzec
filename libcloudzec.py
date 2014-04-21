@@ -598,7 +598,7 @@ class CloudZec:
         filename = os.path.basename(remotePathRel)
         localPath = os.path.join(self.cachePull, filename)
         remotePathAbs = os.path.join(self.remotePath, remotePathRel)
-        self.sftp.get(remotePathAbs, localPath, callback=None)
+        self.sftp.get(remotePathAbs, localPath, callback=self.printTransferStat)
         return localPath
 
 
@@ -613,7 +613,11 @@ class CloudZec:
         """
         self.debug('Push: {} → {}'.format(localPath, remotePathRel))
         remotePathAbs = os.path.join(self.remotePath, remotePathRel)
-        self.sftp.put(localPath, remotePathAbs, confirm=True)
+        self.sftp.put(localPath, remotePathAbs, callback=self.printTransferStat, confirm=True)
+
+
+    def printTransferStat(self, bytesT, bytesA):
+        self.debug('  Transfer: {} of {} Bytes ({:.2f} %)'.format(bytesT, bytesA, bytesT/bytesA*100))
 
 
     def encryptFile(self, pathIn, filename, passphrase, force=False):
