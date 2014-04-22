@@ -16,6 +16,43 @@ import libcloudzec
 DEBUG = False
 
 
+## Class
+class Notification():
+    def __init__(self, notifyClass, name, icon=None):
+        """
+        Basic notification class
+
+        @param notifyClass: The notification class (a little hack to make notifications optional using try: import notify2)
+        @type notifyClass: class
+        @param name: Application name
+        @type name: str
+        @param icon: Path to the icon to use within the application or None if not specified
+        @type icon: str
+        """
+        # Setup
+        self.notification = None
+        self.name = name
+        self.icon = icon
+        # Show starting message
+        self.notification = notifyClass.Notification(self.name, 'Starting…')
+        self.notification.show()
+
+
+    def notify(self, message):
+        """
+        Update the notification message
+        """
+        self.notification.update(self.name, message, self.icon)
+        self.notification.show()        
+
+
+    def close(self):
+        """
+        Closes the notification, do this before deleting the instanced object (e.g. before quitting the program)
+        """
+        self.notification.close()        
+
+
 ## Application
 def showHelp():
     print('Possible arguments:\n')
@@ -44,6 +81,15 @@ def debug(text):
 def main():
     ## Data
     global DEBUG
+    ## Setup notify
+    n = None
+    try:
+        import notify2
+        name = 'CloudZec'
+        notify2.init(name)
+        n = Notification(notify2, name)
+    except ImportError as e:
+        print('Couldn\'t find notify2-bindings')
     ## Arguments
     args = sys.argv[1:]
     # Help    
@@ -60,7 +106,7 @@ def main():
         c = libcloudzec.CloudZec(debug=DEBUG)
         c.remoteinit()
     elif args[0] == 'sync':         # Sync remote <-> local
-        c = libcloudzec.CloudZec(debug=DEBUG)
+        c = libcloudzec.CloudZec(notifyCallback=n.notify, debug=DEBUG)
         c.sync()
     elif args[0] == 'daemon':       # Sync remote <-> local in daemon mode
         # Parse time
@@ -71,7 +117,7 @@ def main():
                 t = int(args[1])
         debug('Daemon mode with an interval of {} minutes'.format(t))
         # Setup and run
-        c = libcloudzec.CloudZec(debug=DEBUG)
+        c = libcloudzec.CloudZec(notifyCallback=n.notify, debug=DEBUG)
         while True:
             c.sync()
             debug('Sleeping for {} minutes'.format(t))
@@ -79,6 +125,9 @@ def main():
     else:
         print('Unknown argument „{}“'.format(args[0]))
         showHelp()
+    ## Close Notifications
+    if n is not None:
+        n.close()
     ## Return
     return 0
 

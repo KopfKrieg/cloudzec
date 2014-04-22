@@ -105,7 +105,7 @@ import paramiko
 
 ## Class
 class CloudZec:
-    def __init__(self, genMasterKey=False, debug=False):
+    def __init__(self, genMasterKey=False, notifyCallback=None, debug=False):
         ## Basic setup
         self._debug = debug
         # Standard pathes
@@ -186,6 +186,19 @@ class CloudZec:
         if rewrite:
             self.debug('Rewrite configuration')
             self.storeConfiguration()
+        ## Enable notifications:
+        self.notifyCallback = notifyCallback
+
+
+    def notify(self, message):
+        """
+        Pass-through for notifications using a callback-mechanism
+
+        @param message: The message of the notification
+        @type message: str
+        """
+        if self.notifyCallback is not None:
+            self.notifyCallback(message)
 
 
     def remoteTreeRemove(self, remotePath):
@@ -695,9 +708,91 @@ class CloudZec:
         return True
 
 
-    def sync(self):
+    def syncKeysWithRemote(self, cleanup=False):
         """
-        Full sync between local and remote repository
+        Synchronises key with remote if self.syncKeys is True.
+        If cleanup is True, all key that are no longer needed will be removed, somehow.
+
+        @param cleanup: If True only required keys are stored
+        @type cleanup: bool
+        """
+        if self.syncKeys is True:
+            self.debug('Sync keys')
+            # Open remote.keys
+            remoteKeys = {}
+            if self.remotePathExists('remote.keys'):
+                remoteKeysPath = self.pull('remote.keys')
+                localKeysPath = self.decryptFile(remoteKeysPath, passphrase=self.masterKey)
+                with open(localKeysPath, 'r') as fIn:
+                    remoteKeys = json.load(fIn)
+                # Remove tmpfile
+                os.remove(localKeysPath)
+            # Merge with local keys
+            targetKeys = {}
+            for key in self.keys:
+                targetKeys[key] = self.keys[key]
+            for key in remoteKeys:
+                if key in targetKeys:
+                    if targetKeys[key] == remoteKeys[key]:
+                        pass
+                    else:
+                        print('Damnit, Keys don\'t match for {}'.format(key))
+                else:
+                    targetKeys[key] = remoteKeys[key]
+            # Store local
+            self.storeKeys(targetKeys)
+            # And remote            
+            serverLogPath = os.path.join(self.remotePath, 'remote.keys')
+            with self.sftp.open(serverLogPath, 'w') as fOut:
+                data = json.dumps(targetKeys)
+                enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='Uncompressed')
+                enc = enc.data # Just the encrypted data, nothing else
+                fOut.write(enc.decode('utf-8'))
+
+
+    def createDiffFromDict(self, oldDict, newDict):
+        """
+        Create a diff from the oldDict to newDict
+
+        @param oldDict: Old dictionary
+        @type oldDict: dict
+        @param newDict: New dictionary
+        @type newDict: dict
+        @return: Returns the diff as l4 formatted list
+        """
+        self.debug('Create diff from dict')
+        diff_l4 = []
+        # Get removed
+        for key in oldDict:
+            if not key in newDict:
+                timestamp = oldDict[key]['timestamp']
+                hashsum = oldDict[key]['hashsum']
+                diff_l4.append([timestamp, key, hashsum, '-'])
+        # Get added and changed
+        for key in newDict:
+            if key in oldDict:
+                if newDict[key]['timestamp'] == oldDict[key]['timestamp']:
+                    pass
+                elif newDict[key]['hashsum'] == oldDict[key]['hashsum']:
+                    pass
+                else:
+                    timestamp = oldDict[key]['timestamp']
+                    hashsum = oldDict[key]['hashsum']
+                    diff_l4.append([timestamp, key, hashsum, '-'])
+                    timestamp = newDict[key]['timestamp']
+                    hashsum = newDict[key]['hashsum']
+                    diff_l4.append([timestamp, key, hashsum, '+'])
+            else:
+                timestamp = newDict[key]['timestamp']
+                hashsum = newDict[key]['hashsum']
+                diff_l4.append([timestamp, key, hashsum, '+'])
+        # Return
+        return diff_l4
+
+
+    def sync1(self):
+        """
+        Full sync between local and remote repository, version 1
         """
         self.debug('Full sync')
         ## Real files -> Local files
@@ -819,83 +914,153 @@ class CloudZec:
         self.debug('Full sync done') #*knocks itself on her virtual shoulder*')
 
 
-    def syncKeysWithRemote(self, cleanup=False):
+    def sync(self):
         """
-        Synchronises key with remote if self.syncKeys is True.
-        If cleanup is True, all key that are no longer needed will be removed, somehow.
-
-        @param cleanup: If True only required keys are stored
-        @type cleanup: bool
+        Full sync between local and remote repository, version 2 using a queue and notifcations
         """
-        if self.syncKeys is True:
-            self.debug('Sync keys')
-            # Open remote.keys
-            remoteKeys = {}
-            if self.remotePathExists('remote.keys'):
-                remoteKeysPath = self.pull('remote.keys')
-                localKeysPath = self.decryptFile(remoteKeysPath, passphrase=self.masterKey)
-                with open(localKeysPath, 'r') as fIn:
-                    remoteKeys = json.load(fIn)
-                # Remove tmpfile
-                os.remove(localKeysPath)
-            # Merge with local keys
-            targetKeys = {}
-            for key in self.keys:
-                targetKeys[key] = self.keys[key]
-            for key in remoteKeys:
-                if key in targetKeys:
-                    if targetKeys[key] == remoteKeys[key]:
-                        pass
-                    else:
-                        print('Damnit, Keys don\'t match for {}'.format(key))
-                else:
-                    targetKeys[key] = remoteKeys[key]
-            # Store local
-            self.storeKeys(targetKeys)
-            # And remote            
-            serverLogPath = os.path.join(self.remotePath, 'remote.keys')
-            with self.sftp.open(serverLogPath, 'w') as fOut:
-                data = json.dumps(targetKeys)
-                enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='Uncompressed')
-                enc = enc.data # Just the encrypted data, nothing else
-                fOut.write(enc.decode('utf-8'))
-
-
-    def createDiffFromDict(self, oldDict, newDict):
-        """
-        Create a diff from the oldDict to newDict
-
-        @param oldDict: Old dictionary
-        @type oldDict: dict
-        @param newDict: New dictionary
-        @type newDict: dict
-        @return: Returns the diff as l4 formatted list
-        """
-        self.debug('Create diff from dict')
-        diff_l4 = []
-        # Get removed
-        for key in oldDict:
-            if not key in newDict:
-                timestamp = oldDict[key]['timestamp']
-                hashsum = oldDict[key]['hashsum']
-                diff_l4.append([timestamp, key, hashsum, '-'])
-        # Get added and changed
-        for key in newDict:
-            if key in oldDict:
-                if newDict[key]['timestamp'] == oldDict[key]['timestamp']:
-                    pass
-                elif newDict[key]['hashsum'] == oldDict[key]['hashsum']:
-                    pass
-                else:
-                    timestamp = oldDict[key]['timestamp']
-                    hashsum = oldDict[key]['hashsum']
-                    diff_l4.append([timestamp, key, hashsum, '-'])
-                    timestamp = newDict[key]['timestamp']
-                    hashsum = newDict[key]['hashsum']
-                    diff_l4.append([timestamp, key, hashsum, '+'])
+        self.debug('Full sync')
+        self.notify('Starting full sync…')
+        ## Real files -> Local files
+        self.debug('  Syncing real files and local files')
+        # Open local.log
+        local_l4 = self.loadLocalLog()
+        # Load real files
+        real_l4 = self.getRealFilesl4(local_l4)
+        # Generate dicts
+        local_dict = self.genDictFroml4(local_l4)
+        real_dict = self.genDictFroml4(real_l4)
+        # Generate diff
+        diff_l4 = self.createDiffFromDict(local_dict, real_dict)
+        # Merge lists
+        new_l4 = []
+        new_l4.extend(local_l4)
+        new_l4.extend(diff_l4)
+        # Store
+        self.storeLocalLog(new_l4)
+        ## Local files <-> Remote files
+        self.debug('  Syncing local files and remote files')
+        # Connect
+        self.connect()
+        # Lock
+        self.lock()
+        # Open remote.log
+        remote_l4 = []
+        if self.remotePathExists('remote.log'):
+            remote_l4 = []
+            # Pull remote.log and decrypt it
+            remoteLogPath = self.pull('remote.log')
+            localLogPath = self.decryptFile(remoteLogPath, passphrase=self.masterKey)
+            # Read it
+            with open(localLogPath, 'r') as fIn:
+                remote_l4 = json.load(fIn)
+            # Remove tmpfile
+            os.remove(localLogPath)
+        # Open local.log
+        local_l4 = self.loadLocalLog()
+        ## Create „target“ list using a fu***** bad algorithm
+        target_l4 = []
+        merge_dict = {}
+        for item in local_l4:
+            key = '{}{}{}{}'.format(item[0], item[1], item[2], item[3])
+            merge_dict[key] = item
+        for item in remote_l4:
+            key = '{}{}{}{}'.format(item[0], item[1], item[2], item[3])
+            merge_dict[key] = item
+        for key in merge_dict:
+            target_l4.extend([merge_dict[key]])
+        target_l4.sort()
+        # Generate dicts
+        remote_dict = self.genDictFroml4(remote_l4)
+        local_dict = self.genDictFroml4(local_l4)
+        target_dict = self.genDictFroml4(target_l4)
+        ## Sync keys before syncing files, otherwise decryption with files from remote to local will throw an exception
+        self.syncKeysWithRemote(cleanup=False)
+        ## Merge number 1: Update the local repository
+        self.debug('    Update the local repository')
+        diff_l4 = self.createDiffFromDict(local_dict, target_dict)
+        # Get files to remove and add
+        queueDownload_l4 = []
+        for item in diff_l4:
+            if item[3] == '-':      # Remove from local repository
+                self.debug('  Remove from local repository: {}'.format(item[1]))
+                os.remove(os.path.join(self.syncFolder, item[1]))
+                # TODO: Remove empty folder
+            elif item[3] == '+':    # Add to local repository, pull from remote
+                queueDownload_l4.append(item)
             else:
-                timestamp = newDict[key]['timestamp']
-                hashsum = newDict[key]['hashsum']
-                diff_l4.append([timestamp, key, hashsum, '+'])
-        # Return
-        return diff_l4
+                print('Well, erm, shit: {}'.format(item))
+        # Create a download-list
+        queueDownload_list = []
+        for item in queueDownload_l4:
+            if not item[2] in queueDownload_list:
+                queueDownload_list.append(item[2])
+        len_list = len(queueDownload_list)
+        len_l4 = len(queueDownload_l4)
+        # Pull and decrypt
+        pathes = []
+        index = 0
+        for hashsum in queueDownload_list:
+            self.notify('Pull and decrypt file {} of {}, {:.2f}% done'.format(index, len_list, index/len_list*100))
+            self.debug(hashsum)
+            remoteFilePath = self.pull(os.path.join('files', hashsum))
+            localFilePath = self.decryptFile(remoteFilePath, passphrase=self.getKey(hashsum, generateKey=False))
+            pathes.append(localFilePath)
+            index += 1
+        # Copying
+        index = 0
+        for item in queueDownload_l4:
+            self.notify('Moving file {} of {}, {:.2f}% done'.format(index, len_l4, index/len_l4*100))
+            localFilePath = os.path.join(self.cache, item[2])
+            localNewPath = os.path.join(self.syncFolder, item[1])
+            self.debug('{} → {}'.format(os.path.absname(localFilePath), item[1]))
+            if not os.path.exists(os.path.dirname(localNewPath)):
+                os.makedirs(os.path.dirname(localNewPath))
+            shutil.copy(localFilePath, localNewPath)
+            # TODO: Update timestamp of file to speedup comparison
+            index += 1
+        # Removing source-files
+        for item in pathes:
+            os.remove(item)
+        # Merge lists
+        localNew_l4 = []
+        localNew_l4.extend(local_l4)
+        localNew_l4.extend(diff_l4)
+        localNew_l4.sort()
+        # Store
+        self.storeLocalLog(localNew_l4)
+        ## Merge number 2: Update the remote repository
+        self.debug('    Update the remote repository')
+        diff_l4 = self.createDiffFromDict(remote_dict, target_dict)
+        for item in diff_l4:
+            if item[3] == '-':
+                self.debug('  Remove from remote repository: {}'.format(item[1]))
+                # Do nothing at the moment :)
+            elif item[3] == '+':    # Add to local repository, pull from remote
+                self.debug('  Add to remote repository: {}'.format(item[1]))
+                # Encrypt and push, remove tmp file
+                localPath = self.encryptFile(item[1], item[2], self.getKey(item[2]))
+                remotePath = os.path.join('files', item[2])
+                self.push(localPath, remotePath)
+                os.remove(localPath)
+            else:
+                print('Well, erm, shit: {}'.format(item))
+        # Merge lists
+        remoteNew_l4 = []
+        remoteNew_l4.extend(local_l4)
+        remoteNew_l4.extend(diff_l4)
+        remoteNew_l4.sort()
+        # Store
+        serverLogPath = os.path.join(self.remotePath, 'remote.log')
+        with self.sftp.open(serverLogPath, 'w') as fOut:
+            data = json.dumps(remoteNew_l4)
+            enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='Uncompressed')
+            enc = enc.data # Just the encrypted data, nothing else
+            fOut.write(enc.decode('utf-8'))
+        ## Sync keys
+        self.syncKeysWithRemote(cleanup=self.cleanup)
+        # Unlock
+        self.unlock()
+        # Disconnect
+        self.disconnect()
+        # Done
+        self.debug('Full sync done') #*knocks itself on her virtual shoulder*')
