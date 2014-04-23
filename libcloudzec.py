@@ -1012,11 +1012,12 @@ class CloudZec:
             self.notify('Moving file {} of {}, {:.2f}% done'.format(index, len_l4, index/len_l4*100))
             localFilePath = os.path.join(self.cache, item[2])
             localNewPath = os.path.join(self.syncFolder, item[1])
-            self.debug('{} → {}'.format(os.path.absname(localFilePath), item[1]))
+            self.debug('{} → {}'.format(os.path.basename(localFilePath), item[1]))
             if not os.path.exists(os.path.dirname(localNewPath)):
                 os.makedirs(os.path.dirname(localNewPath))
             shutil.copy(localFilePath, localNewPath)
-            # TODO: Update timestamp of file to speedup comparison
+            # Update modification-time of the file to speedup comparison on the next sync
+            os.utime (localNewPath, (-1, item[0]))
             index += 1
         # Removing source-files
         for item in pathes:
