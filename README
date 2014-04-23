@@ -9,21 +9,19 @@ CloudZec sync (short „cloudzec“) is a free synchronisation solution with end
 - Usable without any graphical user interface
 - Uses file based deduplication
 
-## Warning ##
-
-This is still an early alpha version, full of bugs and features not even the developers know about.
-
 ## Installation ##
 
 ### General ###
 - Install python3
 - Install the python3 version of paramiko
 - Install somehow [python-gnupg](https://github.com/isislovecruft/python-gnupg)
+- For notification support install python3-notify2
 - Clone the repository
 - Follow the instructions under „Run CloudZec sync“
 
 ### Archlinux ###
 - Install cloudzec-git from AUR
+- For notification support install python-notify2
 - Follow the instructions under „Run CloudZec sync“
 
 ## Run CloudZec sync ##
@@ -46,7 +44,7 @@ There are only a few options for ```cloudzec```:
 ## ToDo ##
 - ~~Refactor everything~~
 - Keyring integration
-- Notify-integration for GNOME/KDE and other desktops
+- ~~Notify-integration for GNOME/KDE and other desktops~~
 - ~~remoteinit()-function~~
 - cleanup()-function
 - Translations?
