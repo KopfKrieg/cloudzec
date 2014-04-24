@@ -32,13 +32,12 @@ Installing CloudZec sync on Ubuntu (or Debian) is still not a trivial task due t
 #### Install the dependencies ####
 ```sudo apt-get install python3 python3-gnupg python3-crypto python3-ecdsa```
 
-For notification support install ```python3-notify2```
-
-For keyring support install ```python3-keyring```
+- For notification support install python3-notify2
+- For keyring support install python3-keyring
 
 #### Setup paramiko ####
 ```
-wget "http://pypi.python.org/packages/source/p/paramiko/paramiko-.13.0.tar.gz"
+wget "http://pypi.python.org/packages/source/p/paramiko/paramiko-1.13.0.tar.gz"
 tar -xf paramiko-1.13.0.tar.gz
 mkdir build
 cd paramiko-1.13.0/
