@@ -178,6 +178,8 @@ class CloudZec:
         #self.gpg = gnupg.GPG(binary=binary, homedir=homedir, keyring=keyring, secring=secring)
         self.gpg = gnupg.GPG(binary=binary, homedir=homedir)
         #self.gpg.use_agent = True
+        ## Set empty rng
+        self.rng = None
         ## Load master key | Needs to be done before storing something (encrypted)
         self.loadMasterKey(genMasterKey)
         ## Load keys
@@ -379,8 +381,12 @@ class CloudZec:
         @return: Returns a safe random key
         """
         self.debug('Generate symmectric key')
+        # Setup (hopefully) a secure random number generator
+        if self.rng is None:
+            self.rng = random.SystemRandom()
+        # Generate a random string
         chars = string.ascii_letters + string.digits + string.punctuation
-        return ''.join(random.choice(chars) for i in range(length))
+        return ''.join(self.rng.choice(chars) for i in range(length))
 
 
     def loadLocalLog(self):
