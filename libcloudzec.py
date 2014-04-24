@@ -119,8 +119,8 @@ class CloudZec:
         self.keys      = {}             # Keys for data en/decryption
         # Default configuration, use loadConfiguration() to override
         self.cache = os.path.join(self.confFolder, 'cache')
-        self.cleanup = False            # If true, everything that is no longer needed will be removed from both, local and remote (not implemented yet, sorry). And even if impleneted: Use with caution!
-        self.compression = 'Uncompressed'   # Preferred compression algorithm |lzma: slow compress, small file, very fast decompress |bzip2: fast compress, small file, fast decompress |gzip: big file, very fast compress, very fast decompress |Choose wisely
+        self.cleanup = False            # If true, everything that is no longer needed will be removed from both, local and remote (keys on both repositories and files on the remote) Use with caution!
+        self.compression = 'none'       # Preferred compression algorithm |"none": Uncompressed (best for binary files) |"ZIP": Zip compression, PGP-compatible |"ZLIB": Zlib compression, incompatible to PGP |"BZIP2": Bzip2 compression, only compatible with GnuPG | Choose wisely
         self.device = platform.node()   # Device name, neccessary for lock-name on server
         self.encryption = 'AES256'      # Preferred encryption algorithm
         self.hashAlgorithm = 'sha256'   # Preferred hash algorithm from hashlib:  md5, sha1, sha224, sha256, sha384, sha512
@@ -633,7 +633,7 @@ class CloudZec:
         try:
             self.debug('  Transfer: {} of {} Bytes ({:.2f} %)'.format(bytesT, bytesA, bytesT/bytesA*100))
         except ZeroDivisionError as e:
-            self.debug('Fuck you: Divison by zero, this should not happen: {}/{}'.format(bytesT, bytesA))
+            self.debug('F*** you: Divison by zero, this should not happen: {}/{}'.format(bytesT, bytesA))
 
 
     def encryptFile(self, pathIn, filename, passphrase, force=False):
@@ -652,6 +652,7 @@ class CloudZec:
         @return: Returns file output path ($self.cachePush/filename)
         """
         self.debug('Encrypt file: {} → {}'.format(pathIn, filename))
+        # Create pathes
         pathIn = os.path.join(self.syncFolder, pathIn)
         pathOut = os.path.join(self.cachePush, filename)
         # If file already exists, return
@@ -661,7 +662,7 @@ class CloudZec:
         with open(pathIn, 'rb') as fIn:
             #with open(pathOut, 'wb') as fOut:
             #    self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo='Uncompressed', output=fOut)
-            binary = self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo='Uncompressed')
+            binary = self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo=self.compression)
             with open(pathOut, 'wb') as fOut:
                 fOut.write(binary.data)
         # And return
@@ -748,7 +749,7 @@ class CloudZec:
             serverLogPath = os.path.join(self.remotePath, 'remote.keys')
             with self.sftp.open(serverLogPath, 'w') as fOut:
                 data = json.dumps(targetKeys)
-                enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='Uncompressed')
+                enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='ZIP')
                 enc = enc.data # Just the encrypted data, nothing else
                 fOut.write(enc.decode('utf-8'))
 
@@ -1080,7 +1081,7 @@ class CloudZec:
         serverLogPath = os.path.join(self.remotePath, 'remote.log')
         with self.sftp.open(serverLogPath, 'w') as fOut:
             data = json.dumps(remoteNew_l4)
-            enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='Uncompressed')
+            enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='ZIP')
             enc = enc.data # Just the encrypted data, nothing else
             fOut.write(enc.decode('utf-8'))
         ## Sync keys
