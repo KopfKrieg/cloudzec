@@ -126,7 +126,7 @@ class CloudZec:
         self.hashAlgorithm = 'sha256'   # Preferred hash algorithm from hashlib:  md5, sha1, sha224, sha256, sha384, sha512
         self.host = 'cloudzec.org'      # Server host
         self.identFile = None           # Identify file for server-login, None if passwordlogin is preferred over publickey
-        self.masterKeyFile  = os.path.join(self.confFolder, 'masterKey')
+        self.masterKeyFile = None       # None tries to find a keyring, else set a path like: os.path.join(self.confFolder, 'masterKey')
         self.port = 22                  # Server port
         self.remotePath = None          # CloudZec-folder on remote device
         self.syncFolder = os.path.join(home, 'CloudZec')    # Local sync-folder
@@ -178,7 +178,7 @@ class CloudZec:
         #self.gpg = gnupg.GPG(binary=binary, homedir=homedir, keyring=keyring, secring=secring)
         self.gpg = gnupg.GPG(binary=binary, homedir=homedir)
         #self.gpg.use_agent = True
-        ## Set empty rng
+        ## Set empty rng, needs to be done before loading master key
         self.rng = None
         ## Load master key | Needs to be done before storing something (encrypted)
         self.loadMasterKey(genMasterKey)
@@ -289,32 +289,57 @@ class CloudZec:
 
     def loadMasterKey(self, genMasterKey=False):
         """
-        Loads master key into self.masterKey, if genMasterKey is True and no key was found, key will be generated and self.s toreMasterKey() is called
+        Loads master key into self.masterKey, if genMasterKey is True and no key was found, key will be generated and self.storeMasterKey() is called
 
         @param genMasterKey: If True, master key will be generated if not avaliable
         @type genMasterKey: bool
         """
         self.debug('Load master key: {}'.format(self.masterKeyFile))
-        if os.path.exists(self.masterKeyFile):
-            data = None
-            with open(self.masterKeyFile, 'r') as fIn:
-                data = fIn.read()
-            self.masterKey = json.loads(data)
-        else:
-            if genMasterKey:
-                self.masterKey = self.genSymKey()
-                self.storeMasterKey()
+        # Check if a keyring should be used or a file
+        if self.masterKeyFile is None:
+            try:
+                import keyring
+                self.keyring = keyring
+            except ImportError as e:
+                print('Couldn\'t find keyring-bindings')
+                self.masterKeyFile = os.path.join(self.confFolder, 'masterKey')
+                print('  Use {} as fallback'.format(self.masterKeyFile))
+        # If self.masterkeyFile is still None, use the keyring
+        if self.masterKeyFile is None:
+            p = self.keyring.get_password('CloudZec sync', 'master')
+            if p is None:   # No password stored, you should generate it
+                if genMasterKey:
+                    self.masterKey = self.genSymKey()
+                    self.storeMasterKey()
+                else:
+                    raise Exception('No master key found and I am not allowed to generate a new one')
             else:
-                raise Exception('No master key found and I am not allowed to generate a new one')
+                self.masterKey = p
+        # Else use a file 
+        else:
+            if os.path.exists(self.masterKeyFile):
+                data = None
+                with open(self.masterKeyFile, 'r') as fIn:
+                    data = fIn.read()
+                self.masterKey = json.loads(data)
+            else:
+                if genMasterKey:
+                    self.masterKey = self.genSymKey()
+                    self.storeMasterKey()
+                else:
+                    raise Exception('No master key found and I am not allowed to generate a new one')
 
 
     def storeMasterKey(self):
         """
-        Stores master key into self.masterKeyFile
+        Stores master key, either into a keyring or into self.masterKeyFile
         """
         self.debug('Store master key: {}'.format(self.masterKeyFile))
-        with open(self.masterKeyFile, 'w') as fOut:
-            json.dump(self.masterKey, fOut, sort_keys=True, indent=2)
+        if self.masterKeyFile is None:
+            self.keyring.set_password('CloudZec sync', 'master', self.masterKey)
+        else:
+            with open(self.masterKeyFile, 'w') as fOut:
+                json.dump(self.masterKey, fOut, sort_keys=True, indent=2)
 
 
     def loadKeys(self):
