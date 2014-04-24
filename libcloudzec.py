@@ -718,13 +718,15 @@ class CloudZec:
         return True
 
 
-    def syncKeysWithRemote(self, cleanup=False):
+    def syncKeysWithRemote(self, cleanup=False, keys=None):
         """
-        Synchronises key with remote if self.syncKeys is True.
-        If cleanup is True, all key that are no longer needed will be removed, somehow.
+        Synchronises keys with remote if self.syncKeys is True, also stores the merged list of keys on the local repository using self.storeKeys()
+        If cleanup is True, all keys that are no longer needed will be removed (using the list of hashsum/keys as reference)
 
         @param cleanup: If True only required keys are stored
         @type cleanup: bool
+        @param keys: A list of hashsums/keys/whatever to keep
+        @param keys: list
         """
         if self.syncKeys is True:
             self.debug('Sync keys')
@@ -749,15 +751,28 @@ class CloudZec:
                         print('Damnit, Keys don\'t match for {}'.format(key))
                 else:
                     targetKeys[key] = remoteKeys[key]
-            # Store local
-            self.storeKeys(targetKeys)
-            # And remote            
-            serverLogPath = os.path.join(self.remotePath, 'remote.keys')
-            with self.sftp.open(serverLogPath, 'w') as fOut:
-                data = json.dumps(targetKeys)
-                enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='ZIP')
-                enc = enc.data # Just the encrypted data, nothing else
-                fOut.write(enc.decode('utf-8'))
+            # Cleanup if cleanup is True and keys is not None
+            if cleanup is True and keys is not None:
+                self.debug('  Cleaning up keys…')
+                newTargetKeys = {}
+                for key in targetKeys:
+                    if key in keys:
+                        newTargetKeys[key] = targetKeys[key]
+                    else:
+                        self.debug('    Throwing away key for {}'.format(key))
+                targetKeys = newTargetKeys  # Caution: This is not a deepcopy
+            ## Only do write-operations if anything changed
+            # On local
+            if not targetKeys == self.keys:     # This is not super-reliable
+                self.storeKeys(targetKeys)
+            # And remote
+            if not targetKeys == remoteKeys:    # This is not super-reliable
+                serverLogPath = os.path.join(self.remotePath, 'remote.keys')
+                with self.sftp.open(serverLogPath, 'w') as fOut:
+                    data = json.dumps(targetKeys)
+                    enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='ZIP')
+                    enc = enc.data # Just the encrypted data, nothing else
+                    fOut.write(enc.decode('utf-8'))
 
 
     def createDiffFromDict(self, oldDict, newDict):
@@ -1091,21 +1106,22 @@ class CloudZec:
             enc = enc.data # Just the encrypted data, nothing else
             fOut.write(enc.decode('utf-8'))
         ## Sync keys
-        self.syncKeysWithRemote(cleanup=self.cleanup)
+        # Get a list of all avaliable hashsums (files to keep)
+        filesKeep_list = []
+        for item in target_dict:
+            if not target_dict[item]['hashsum'] in filesKeep_list:
+                filesKeep_list.append(target_dict[item]['hashsum'])
+        # Sync keys using this list
+        self.syncKeysWithRemote(cleanup=self.cleanup, keys=filesKeep_list)
         ## Cleanup of the remote repository
         if self.cleanup:
-            self.debug('  Cleanup remote repository')
-            # Get all files to keep
-            filesKeep_list = []
-            for item in target_dict:
-                if not target_dict[item]['hashsum'] in filesKeep_list:
-                    filesKeep_list.append(target_dict[item]['hashsum'])
+            self.debug('  Cleaning up files on the remote repository…')
             # Get all files on remote
             filesAll_list = self.sftp.listdir(os.path.join(self.remotePath, 'files'))
             # Cleanup
             for hashsum in filesAll_list:
                 if not hashsum in filesKeep_list:
-                    self.debug('    Removing file from remote repository: {}'.format(hashsum))
+                    self.debug('    Removing file: {}'.format(hashsum))
                     self.sftp.remove(os.path.join(self.remotePath, 'files', hashsum))
         # Unlock
         self.unlock()
