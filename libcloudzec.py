@@ -315,7 +315,7 @@ class CloudZec:
                     raise Exception('No master key found and I am not allowed to generate a new one')
             else:
                 self.masterKey = p
-        # Else use a file 
+        # Else use a file
         else:
             if os.path.exists(self.masterKeyFile):
                 data = None
@@ -603,7 +603,7 @@ class CloudZec:
         self.debug('Get real files and return l4 list')
         compareDict = {}
         if comparel4 is not None:
-            compareDict = self.genDictFroml4(comparel4)            
+            compareDict = self.genDictFroml4(comparel4)
         # Get files
         files = []
         for root, dirnames, filenames in os.walk(self.syncFolder):
@@ -639,7 +639,7 @@ class CloudZec:
         
         @param remotePathRel: Relative path of the remote file
         @type remotePathRel: str
-        @return: Returns the absolute path of the local file 
+        @return: Returns the absolute path of the local file
         """
         self.debug('Pull: {}'.format(remotePathRel))
         filename = os.path.basename(remotePathRel)
@@ -702,7 +702,7 @@ class CloudZec:
         # And return
         return pathOut
 
-    
+
     def decryptFile(self, pathIn, passphrase=None, cleanup=True):
         """
         Reads the file from pathIn, decrypts it and returns the path to the decrypted file
@@ -711,7 +711,7 @@ class CloudZec:
         @type pathIn: str
         @param passphrase: Passphrase for decryption or None if key is in self.getKey()
         @type passphrase: str
-        @param cleanup: If True, the input file will be removed after decryption 
+        @param cleanup: If True, the input file will be removed after decryption
         @type cleanup: bool
         """
         filename = os.path.basename(pathIn)
@@ -726,7 +726,7 @@ class CloudZec:
         if cleanup:
             os.remove(pathIn)
         return pathOut
-        
+
 
     def remotePathExists(self, remotePathRel=''):
         """
@@ -1033,7 +1033,10 @@ class CloudZec:
         # Get files to remove and add
         diff_l4 = self.createDiffFromDict(local_dict, target_dict)
         if diff_l4: # If diff_l4 is not empty
-            self.notify('      Updating {} files in the local repository'.format(len(diff_l4)))
+            if len(diff_l4) == 1:
+                self.notify('Updating {} file in the local repository'.format(len(diff_l4)))
+            else:
+                self.notify('Updating {} files in the local repository'.format(len(diff_l4)))
         queuePull_l4 = []
         for item in diff_l4:
             if item[3] == '-':      # Remove from local repository
@@ -1094,7 +1097,10 @@ class CloudZec:
         # Get files to remove and add
         diff_l4 = self.createDiffFromDict(remote_dict, target_dict)
         if diff_l4: # If diff_l4 is not empty
-            self.notify('      Updating {} files in the remote repository'.format(len(diff_l4)))
+            if len(diff_l4) == 1:
+                self.notify('Updating {} file in the remote repository'.format(len(diff_l4)))
+            else:
+                self.notify('Updating {} files in the remote repository'.format(len(diff_l4)))
         queuePush_l4 = []
         for item in diff_l4:
             if item[3] == '-':
