@@ -612,20 +612,23 @@ class CloudZec:
         # Create l4 list
         l4 = []
         for filename in files:
-            timestamp = os.path.getmtime(filename)
-            relativePath = filename.split(self.syncFolder)[1][1:]
-            hashsum = None
-            if relativePath in compareDict and self.useTimestamp is True:
-                self.debug('  Use timestamp comparison for {}'.format(relativePath))
-                if timestamp == compareDict[relativePath]['timestamp']:
-                    self.debug('    They match! Speedup, yeah!')
-                    hashsum = compareDict[relativePath]['hashsum']
-                else:  
-                    self.debug('    They don\'t match, generate hashsum as fallback')
-                    hashsum = self.getHashOfFile(filename)
+            if os.path.islink(filename):    # Caution: os.path.isfile() returns True if the linked item is a file! So check first, if it is a link!
+                self.debug('  Ignoring link: {}'.format(filename))
             else:
-                hashsum = self.getHashOfFile(filename)
-            l4.append([timestamp, relativePath, hashsum, '+'])
+                timestamp = os.path.getmtime(filename)
+                relativePath = filename.split(self.syncFolder)[1][1:]
+                hashsum = None
+                if relativePath in compareDict and self.useTimestamp is True:
+                    self.debug('  Use timestamp comparison for {}'.format(relativePath))
+                    if timestamp == compareDict[relativePath]['timestamp']:
+                        self.debug('    They match! Speedup, yeah!')
+                        hashsum = compareDict[relativePath]['hashsum']
+                    else:
+                        self.debug('    They don\'t match, generate hashsum as fallback')
+                        hashsum = self.getHashOfFile(filename)
+                else:
+                    hashsum = self.getHashOfFile(filename)
+                l4.append([timestamp, relativePath, hashsum, '+'])
         # Return
         return l4
 
