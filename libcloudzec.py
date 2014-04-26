@@ -115,24 +115,24 @@ class CloudZec:
         self.keysFile = os.path.join(self.confFolder, 'keys')
         self.localLog = os.path.join(self.confFolder, 'local.log')
         # Empty vars
-        self.masterKey = None           # Masterkey
+        self.masterKey = None           # MasterKey
         self.keys      = {}             # Keys for data en/decryption
         # Default configuration, use loadConfiguration() to override
         self.cache = os.path.join(self.confFolder, 'cache')
-        self.cleanup = False            # If true, everything that is no longer needed will be removed from both, local and remote (keys on both repositories and files on the remote) Use with caution!
+        self.cleanup = False            # If True, everything that is no longer needed will be removed from both, local and remote (keys on both repositories and files on the remote) Use with caution!
         self.compression = 'none'       # Preferred compression algorithm |"none": Uncompressed (best for binary files) |"ZIP": Zip compression, PGP-compatible |"ZLIB": Zlib compression, incompatible to PGP |"BZIP2": Bzip2 compression, only compatible with GnuPG | Choose wisely
-        self.device = platform.node()   # Device name, neccessary for lock-name on server
+        self.device = platform.node()   # Device name, neccessary for lock-name on remote
         self.encryption = 'AES256'      # Preferred encryption algorithm
         self.hashAlgorithm = 'sha256'   # Preferred hash algorithm from hashlib:  md5, sha1, sha224, sha256, sha384, sha512
-        self.host = 'cloudzec.org'      # Server host
-        self.identFile = None           # Identify file for server-login, None if passwordlogin is preferred over publickey
+        self.identFile = None           # Identify file for remote login, None if password login is preferred over publickey authenticationy
         self.masterKeyFile = None       # None tries to find a keyring, else set a path like: os.path.join(self.confFolder, 'masterKey')
-        self.port = 22                  # Server port
+        self.remoteHost = 'cloudzec.org'    # Remote host
         self.remotePath = None          # CloudZec-folder on remote device
+        self.remotePort = 22            # Remote port
+        self.remoteUsername = None      # Username for remote login
         self.syncFolder = os.path.join(home, 'CloudZec')    # Local sync-folder
-        self.syncKeys = True            # Sync keys with the remote node only if self.syncKeys is True
-        self.useTimestamp = True        # If true, a timestamp comparison is done instead of generating hashsums. This speed ups a lot but is not as good as comparing hashsums
-        self.username = None            # Username for server-login
+        self.syncKeys = True            # Sync keys with the remote host only if self.syncKeys is True
+        self.useTimestamp = True        # If True, a timestamp comparison is done instead of generating hashsums. This speed ups a lot but is not as good as comparing hashsums
         # Create confFolder if missing
         if not os.path.exists(self.confFolder):
             self.debug('Create confFolder {}'.format(self.confFolder))
@@ -166,8 +166,8 @@ class CloudZec:
         if not os.path.exists(self.syncFolder):
             self.debug('Create folder: {}'.format(self.syncFolder))
             os.makedirs(self.syncFolder)
-        # Check username
-        if self.username is None:
+        # Check remoteUsername
+        if self.remoteUsername is None:
             # Don't ask anything in __init__()
             raise Exception('You need to set a username in {}'.format(self.confFile))
         # Create gpg instance | needs to be defined before en/decrypting anything
@@ -263,7 +263,7 @@ class CloudZec:
         with open(self.confFile, 'r') as fIn:
             conf = json.load(fIn)
         rewrite = False
-        keys = ['cache', 'cleanup', 'compression', 'device', 'encryption', 'hashAlgorithm', 'host', 'identFile', 'masterKeyFile', 'port', 'remotePath', 'syncFolder', 'syncKeys', 'useTimestamp', 'username']
+        keys = ['cache', 'cleanup', 'compression', 'device', 'encryption', 'hashAlgorithm', 'identFile', 'masterKeyFile', 'remoteHost', 'remotePath', 'remotePort', 'remoteUsername', 'syncFolder', 'syncKeys', 'useTimestamp']
         for key in keys:
             try:
                 exec('self.{} = conf[\'{}\']'.format(key, key))
@@ -279,7 +279,7 @@ class CloudZec:
         Stores configuration into self.confFile (values read from self.$variable)
         """
         self.debug('Store Configuration: {}'.format(self.confFile))
-        keys = ['cache', 'cleanup', 'compression', 'device', 'encryption', 'hashAlgorithm', 'host', 'identFile', 'masterKeyFile', 'port', 'remotePath', 'syncFolder', 'syncKeys', 'useTimestamp', 'username']
+        keys = ['cache', 'cleanup', 'compression', 'device', 'encryption', 'hashAlgorithm', 'identFile', 'masterKeyFile', 'remoteHost', 'remotePath', 'remotePort', 'remoteUsername', 'syncFolder', 'syncKeys', 'useTimestamp']
         conf = {}
         for key in keys:
             exec('conf[\'{}\'] = self.{}'.format(key, key))
@@ -454,12 +454,12 @@ class CloudZec:
                 return  # Return if a transport is already opened. This could cause problems if, for example, the transport is open but the sftpclient is inactive/dead/etc
         except AttributeError:  # self._transport is not defined, so we should open it
             pass
-        self._transport = paramiko.Transport((self.host, self.port))
+        self._transport = paramiko.Transport((self.remoteHost, self.remotePort))
         self.sftp = None
         if self.identFile is None:
             self.debug('  Use password login')
             try:
-                self._transport.connect(username=self.username, password=getpass.getpass('    Password for remote host: '))
+                self._transport.connect(username=self.remoteUsername, password=getpass.getpass('    Password for remote host: '))
             except paramiko.ssh_exception.BadAuthenticationType:
                 self.debug('      Hm. Login with password doesn\'t work. Did you set „identFile“ in {}?'.format(self.confFile))
                 raise
@@ -471,10 +471,10 @@ class CloudZec:
                 key = paramiko.RSAKey.from_private_key_file(identFile)
             except paramiko.ssh_exception.PasswordRequiredException:
                 key = paramiko.RSAKey.from_private_key_file(identFile, password=getpass.getpass('    Password for identity file: '))
-            self._transport.connect(username=self.username, pkey=key)
+            self._transport.connect(username=self.remoteUsername, pkey=key)
         self.sftp = paramiko.SFTPClient.from_transport(self._transport)
-        self.debug('  Connected to remote host: {}@{}:{}'.format(self.username, self.host, self.port))
-        # Check remotePath | Path like /home/$username/cloudzec on the remote device!
+        self.debug('  Connected to remote host: {}@{}:{}'.format(self.remoteUsername, self.remoteHost, self.remotePort))
+        # Check remotePath | Path like /home/$remoteUsername/cloudzec on the remote device!
         if self.remotePath is None:
             self.debug('Create default remotePath')
             self.remotePath = os.path.join(self.sftp.normalize('.'), 'cloudzec')
