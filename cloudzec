@@ -8,6 +8,7 @@
 ## Imports
 import os
 import sys
+import time
 # External
 import libcloudzec
 
@@ -113,8 +114,6 @@ def main():
             c = libcloudzec.CloudZec(notifyCallback=n.notify, debug=DEBUG)
         c.sync()
     elif args[0] == 'daemon':       # Sync remote <-> local in daemon mode
-        # Parse time
-        import time
         t = 15
         if len(args) > 1:
             if args[1].isdigit():

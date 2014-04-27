@@ -6,55 +6,12 @@
 #
 # This is the basic CloudZec Class
 #
-# Note : First compress, then encrypt
-#      : First remove, then add
-#
-#
-## GnuPG | python-gnupg fork | Fast development, including security patches, etc.
-#  https://github.com/isislovecruft/python-gnupg/
-#  https://python-gnupg.readthedocs.org/en/latest/gnupg.html#gnupg-module
-#
-#
-## Paramiko | python-paramiko
-#  https://github.com/paramiko/paramiko
-#  https://github.com/paramiko/paramiko/issues/16
-#  https://github.com/nischu7/paramiko
-#  https://github.com/revogit/paramiko
-#
-#
-## GnuPG | Options
-# encryption:
-#  gpg
-#   --armor          ASCII armored output
-#   --symmetric      Symmetric encryption using passphrase, may be combined with --sign
-#   --cipher-algo    Specify cipher algorithm
-#    aes256           using AES256 encryption
-#   --output         Write output to a file
-#    fout             The file
-#   --batch          Batch mode, don't ask for anything, do not allow interactive commands, needed for --passphrase
-#   --passphrase     Use string as the passphrase
-#    pw               The passphrase
-#   --no-tty         Make sure that the TTY is never used for any output
-#    fin              The input file
-# decryption:
-#  gpg
-#   --decrypt        Decrypt file
-#   --output         Write output to a file
-#    fout             The file
-#   --batch          Batch mode, don't ask for anything, do not allow interactive commands
-#   --passphrase     Use string as the passphrase
-#    pw               The passphrase
-#   --no-tty         Make sure that the TTY is never used for any output)
-#    fin              The input file
-#
-#
 ## Server structure
 # $serverpath
 # |-- files
 # |-- lock
 # |-- remote.keys   (encrypted)
 # `-- remote.log    (encrypted)
-#
 #
 ## Local structure
 # $syncFolder
@@ -67,7 +24,6 @@
 #  |-- local.log
 #  |-- cloudzec.conf
 #  `-- masterKey
-#
 #
 ## local.log and remote.log | encrypted with masterKey | l4-format
 #
@@ -86,18 +42,16 @@
 
 
 ## Imports
+import errno
 import getpass
 import hashlib
 import json
 import os
 import platform
 import random
+import shutil
 import stat
 import string
-#import tarfile
-#import time
-import errno
-import shutil
 # External
 import gnupg
 import paramiko
@@ -178,7 +132,7 @@ class CloudZec:
         #self.gpg = gnupg.GPG(binary=binary, homedir=homedir, keyring=keyring, secring=secring)
         self.gpg = gnupg.GPG(binary=binary, homedir=homedir)
         #self.gpg.use_agent = True
-        ## Set empty rng, needs to be done before loading master key
+        ## Set empty rng (random number generator), needs to be done before loading master key
         self.rng = None
         ## Load master key | Needs to be done before storing something (encrypted)
         self.loadMasterKey(genMasterKey)
@@ -355,7 +309,6 @@ class CloudZec:
                 #self.keys = json.loads(data.decode('utf-8'))
                 self.keys = json.load(fIn)
         else:
-            #self.keys = {}
             self.storeKeys()
 
 
@@ -556,7 +509,6 @@ class CloudZec:
         """
         self.debug('Get hashsum of file: {}'.format(localPath))
         hashsum = eval('hashlib.{}()'.format(self.hashAlgorithm))   # Executes for example hashsum = hashlib.sha256()
-        #hashsum = hashlib.sha256()
         with open(localPath, mode='rb') as fIn:
             while True:
                 buf = fIn.read(4096)    # Maybe increase buffer-size for higher speed?
