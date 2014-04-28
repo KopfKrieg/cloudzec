@@ -224,6 +224,11 @@ class CloudZec:
             except KeyError as e:
                 self.debug('  KeyError: {}'.format(e))
                 rewrite = True
+        # Check if compression is "none" ("none" breaks the output stream in python-gnupg from isislovecruft, v1.2.5)
+        if self.compression == "none":
+            self.compression = 'Uncompressed'
+            rewrite = True
+        # And rewrite if necessary
         if rewrite:
             self.storeConfiguration()
 
@@ -619,7 +624,8 @@ class CloudZec:
         try:
             self.debug('  Transfer: {} of {} Bytes ({:.2f} %)'.format(bytesT, bytesA, bytesT/bytesA*100))
         except ZeroDivisionError as e:
-            self.debug('F*** you: Divison by zero, this should not happen: {}/{}'.format(bytesT, bytesA))
+            self.debug('Division by zero: {}/{}'.format(bytesT, bytesA))
+            raise ZeroDivisionError('A ZeroDivisionError occured. This is not normal and most of the time when this error occurs, the encryption of a file using gpg failed, resulting in an empty file and is now causing a ZeroDivisionError. Seriously, check your files, your config and try it again!')
 
 
     def encryptFile(self, pathIn, filename, passphrase, force=False):
