@@ -34,7 +34,7 @@
 ## The l4-format is a list in the following specification, sorted by its timestamp (first element)
 #
 # List index
-# 0  - float  | Modification-time of the file in UNIX-format, from os.path.getmtime(path) or time.time()
+# 0  - float  | Access-time of the file in UNIX-format, from os.path.getatime(path) or time.time() [previously used modification-time, os.path.getmtime(path), see bug #12)
 # 1  - string | Relative path of file, e.g. folder/file1.txt
 # 2  - string | Hashsum of file
 # 3  - string | Action, can either be + or -
@@ -62,7 +62,7 @@ class CloudZec:
     def __init__(self, genMasterKey=False, notifyCallback=None, debug=False):
         ## Basic setup
         self._debug = debug
-        # Standard pathes
+        # Default pathes
         home = os.path.expanduser('~')
         self.confFolder = os.path.join(home, '.cloudzec')
         self.confFile = os.path.join(self.confFolder, 'cloudzec.conf')
@@ -73,12 +73,12 @@ class CloudZec:
         self.keys      = {}             # Keys for data en/decryption
         # Default configuration, use loadConfiguration() to override
         self.cache = os.path.join(self.confFolder, 'cache')
-        self.cleanup = False            # If True, everything that is no longer needed will be removed from both, local and remote (keys on both repositories and files on the remote) Use with caution!
+        self.cleanup = False            # If True, everything that is no longer needed will be removed from both, local and remote (keys on both repositories and files on the remote)
         self.compression = 'none'       # Preferred compression algorithm |"none": Uncompressed (best for binary files) |"ZIP": Zip compression, PGP-compatible |"ZLIB": Zlib compression, incompatible to PGP |"BZIP2": Bzip2 compression, only compatible with GnuPG | Choose wisely
         self.device = platform.node()   # Device name, neccessary for lock-name on remote
         self.encryption = 'AES256'      # Preferred encryption algorithm
         self.hashAlgorithm = 'sha256'   # Preferred hash algorithm from hashlib:  md5, sha1, sha224, sha256, sha384, sha512
-        self.identFile = None           # Identify file for remote login, None if password login is preferred over publickey authenticationy
+        self.identFile = None           # Identify file for remote login, None if password login is preferred over publickey authentication
         self.masterKeyFile = None       # None tries to find a keyring, else set a path like: os.path.join(self.confFolder, 'masterKey')
         self.remoteHost = 'cloudzec.org'    # Remote host
         self.remotePath = None          # CloudZec-folder on remote device
@@ -86,7 +86,7 @@ class CloudZec:
         self.remoteUsername = None      # Username for remote login
         self.syncFolder = os.path.join(home, 'CloudZec')    # Local sync-folder
         self.syncKeys = True            # Sync keys with the remote host only if self.syncKeys is True
-        self.useTimestamp = True        # If True, a timestamp comparison is done instead of generating hashsums. This speed ups a lot but is not as good as comparing hashsums
+        self.useTimestamp = True        # If True, a timestamp comparison is done instead of generating hashsums. This speeds up a lot but is not as good as comparing hashsums
         # Create confFolder if missing
         if not os.path.exists(self.confFolder):
             self.debug('Create confFolder {}'.format(self.confFolder))
@@ -142,7 +142,7 @@ class CloudZec:
         if rewrite:
             self.debug('Rewrite configuration')
             self.storeConfiguration()
-        ## Enable notifications:
+        ## Set notify callback
         self.notifyCallback = notifyCallback
 
 
@@ -210,7 +210,7 @@ class CloudZec:
 
     def loadConfiguration(self):
         """
-        Loads configuration from self.confFile and sets values (self.$variable)
+        Load configuration from self.confFile and set values (self.$variable)
         """
         self.debug('Load Configuration: {}'.format(self.confFile))
         conf = None
@@ -225,7 +225,7 @@ class CloudZec:
                 self.debug('  KeyError: {}'.format(e))
                 rewrite = True
         # Check if compression is "none" ("none" breaks the output stream in python-gnupg from isislovecruft, v1.2.5)
-        if self.compression == "none":
+        if self.compression == 'none':
             self.compression = 'Uncompressed'
             rewrite = True
         # And rewrite if necessary
@@ -235,7 +235,7 @@ class CloudZec:
 
     def storeConfiguration(self):
         """
-        Stores configuration into self.confFile (values read from self.$variable)
+        Store configuration into self.confFile (values read from self.$variable)
         """
         self.debug('Store Configuration: {}'.format(self.confFile))
         keys = ['cache', 'cleanup', 'compression', 'device', 'encryption', 'hashAlgorithm', 'identFile', 'masterKeyFile', 'remoteHost', 'remotePath', 'remotePort', 'remoteUsername', 'syncFolder', 'syncKeys', 'useTimestamp']
@@ -248,7 +248,7 @@ class CloudZec:
 
     def loadMasterKey(self, genMasterKey=False):
         """
-        Loads master key into self.masterKey, if genMasterKey is True and no key was found, key will be generated and self.storeMasterKey() is called
+        Load master key into self.masterKey, if genMasterKey is True and no key was found, key will be generated and self.storeMasterKey() is called
 
         @param genMasterKey: If True, master key will be generated if not avaliable
         @type genMasterKey: bool
@@ -291,8 +291,9 @@ class CloudZec:
 
     def storeMasterKey(self):
         """
-        Stores master key, either into a keyring or into self.masterKeyFile
+        Store master key, either into a keyring or into self.masterKeyFile
         """
+        # Hint: Run self.loadMasterKey() before this, otherwise it won't work (no keyring will be found)
         self.debug('Store master key: {}'.format(self.masterKeyFile))
         if self.masterKeyFile is None:
             self.keyring.set_password('CloudZec sync', 'master', self.masterKey)
@@ -333,26 +334,26 @@ class CloudZec:
             json.dump(self.keys, fOut, sort_keys=True, indent=2)
 
 
-    def getKey(self, keyHash, generateKey=True):
+    def getKey(self, hashsum, generateKey=True):
         """
         Return key for en-/decryption based on the given hash
 
-        @param keyHash: The key/hash-value
-        @param keyHash: str
+        @param hashsum: The key/hash-value
+        @param hashsum: str
         @param generateKey: If True, a key will be generated if required. If False an exception will be thrown
-        @param keyHash: bool
+        @param hashsum: bool
         @return: Returns A key for en-/decryption
         """
-        self.debug('Get key: {}'.format(keyHash))
-        if keyHash in self.keys:
-            return self.keys[keyHash]
+        self.debug('Get key: {}'.format(hashsum))
+        if hashsum in self.keys:
+            return self.keys[hashsum]
         else:
             if generateKey:
-                self.keys[keyHash] = self.genSymKey()
+                self.keys[hashsum] = self.genSymKey()
                 self.storeKeys()
-                return self.keys[keyHash]
+                return self.keys[hashsum]
             else:
-                raise Exception('No key found for {}'.format(keyHash))
+                raise Exception('No key found for {}'.format(hashsum))
 
 
     def genSymKey(self, length=32):
@@ -384,9 +385,9 @@ class CloudZec:
             with open(self.localLog, 'r') as fIn:
                 data = fIn.read()
                 local = json.loads(data)
-        else:
-            local = []
-            self.storeLocalLog(local)
+        #else:
+        #    local = []
+        #    self.storeLocalLog(local)
         return local
 
 
@@ -434,9 +435,9 @@ class CloudZec:
         self.debug('  Connected to remote host: {}@{}:{}'.format(self.remoteUsername, self.remoteHost, self.remotePort))
         # Check remotePath | Path like /home/$remoteUsername/cloudzec on the remote device!
         if self.remotePath is None:
-            self.debug('Create default remotePath')
+            self.debug('  Create default remotePath')
             self.remotePath = os.path.join(self.sftp.normalize('.'), 'cloudzec')
-            self.debug('  {}'.format(self.remotePath))
+            self.debug('    {}'.format(self.remotePath))
             self.storeConfiguration()
 
 
@@ -472,7 +473,8 @@ class CloudZec:
         self.debug('Lock remote directory')
         self.sftp.chdir(self.remotePath)
         if 'lock' in self.sftp.listdir(self.remotePath):
-            if self.device == self.getLockName():
+            name = self.getLockName()
+            if self.device == name:
                 self.debug('  Already locked (from this device)')
             else:
                 self.debug('  Already locked (from {})'.format(name))
@@ -537,9 +539,9 @@ class CloudZec:
         for entry in l4:
             if entry[3] == '+':
                 timestamp = entry[0]
-                relative_path = entry[1]
+                relativePath = entry[1]
                 hashsum = entry[2]
-                d[relative_path] = {'timestamp':timestamp, 'hashsum':hashsum}
+                d[relativePath] = {'timestamp':timestamp, 'hashsum':hashsum}
             elif entry[3] == '-':
                 relativePath = entry[1]
                 if relativePath in d:
@@ -572,7 +574,8 @@ class CloudZec:
             if os.path.islink(filename):    # Caution: os.path.isfile() returns True if the linked item is a file! So check first, if it is a link!
                 self.debug('  Ignoring link: {}'.format(filename))
             else:
-                timestamp = os.path.getmtime(filename)
+                #timestamp = os.path.getmtime(filename)
+                timestamp = os.path.getatime(filename)
                 relativePath = filename.split(self.syncFolder)[1][1:]
                 hashsum = None
                 if relativePath in compareDict and self.useTimestamp is True:
