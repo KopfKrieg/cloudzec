@@ -1040,8 +1040,8 @@ class CloudZec:
             if not os.path.exists(os.path.dirname(localNewPath)):
                 os.makedirs(os.path.dirname(localNewPath))
             shutil.copy(localFilePath, localNewPath)
-            # Update modification-time of the file to speedup comparison on the next sync
-            os.utime (localNewPath, (-1, item[0]))
+            # Update access and modification-time of the file to speedup comparison on the next sync
+            os.utime(localNewPath, (item[0], item[0]))
             index += 1
         # Removing source-files
         for item in pathes:
