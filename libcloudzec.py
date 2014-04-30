@@ -605,7 +605,7 @@ class CloudZec:
         filename = os.path.basename(remotePathRel)
         localPath = os.path.join(self.cachePull, filename)
         remotePathAbs = os.path.join(self.remotePath, remotePathRel)
-        self.sftp.get(remotePathAbs, localPath, callback=self.printTransferStat)
+        self.sftp.get(remotePathAbs, localPath, callback=self.callbackTransferStatus)
         return localPath
 
 
@@ -620,10 +620,10 @@ class CloudZec:
         """
         self.debug('Push: {} → {}'.format(localPath, remotePathRel))
         remotePathAbs = os.path.join(self.remotePath, remotePathRel)
-        self.sftp.put(localPath, remotePathAbs, callback=self.printTransferStat, confirm=True)
+        self.sftp.put(localPath, remotePathAbs, callback=self.callbackTransferStatus, confirm=True)
 
 
-    def printTransferStat(self, bytesT, bytesA):
+    def callbackTransferStatus(self, bytesT, bytesA):
         try:
             self.debug('  Transfer: {} of {} Bytes ({:.2f} %)'.format(bytesT, bytesA, bytesT/bytesA*100))
         except ZeroDivisionError as e:
@@ -804,130 +804,6 @@ class CloudZec:
         return diff_l4
 
 
-    def sync1(self):
-        """
-        Full sync between local and remote repository, version 1
-        """
-        self.debug('Full sync')
-        ## Real files -> Local files
-        self.debug('  Syncing real files and local files')
-        # Open local.log
-        local_l4 = self.loadLocalLog()
-        # Load real files
-        real_l4 = self.getRealFilesl4(local_l4)
-        # Generate dicts
-        local_dict = self.genDictFroml4(local_l4)
-        real_dict = self.genDictFroml4(real_l4)
-        # Generate diff
-        diff_l4 = self.createDiffFromDict(local_dict, real_dict)
-        # Merge lists
-        new_l4 = []
-        new_l4.extend(local_l4)
-        new_l4.extend(diff_l4)
-        # Store
-        self.storeLocalLog(new_l4)
-        ## Local files <-> Remote files
-        self.debug('  Syncing local files and remote files')
-        # Connect
-        self.connect()
-        # Lock
-        self.lock()
-        # Open remote.log
-        remote_l4 = []
-        if self.remotePathExists('remote.log'):
-            remote_l4 = []
-            # Pull remote.log and decrypt it
-            remoteLogPath = self.pull('remote.log')
-            localLogPath = self.decryptFile(remoteLogPath, passphrase=self.masterKey)
-            # Read it
-            with open(localLogPath, 'r') as fIn:
-                remote_l4 = json.load(fIn)
-            # Remove tmpfile
-            os.remove(localLogPath)
-        # Open local.log
-        local_l4 = self.loadLocalLog()
-        ## Create „target“ list using a fu***** bad algorithm
-        target_l4 = []
-        merge_dict = {}
-        for item in local_l4:
-            key = '{}{}{}{}'.format(item[0], item[1], item[2], item[3])
-            merge_dict[key] = item
-        for item in remote_l4:
-            key = '{}{}{}{}'.format(item[0], item[1], item[2], item[3])
-            merge_dict[key] = item
-        for key in merge_dict:
-            target_l4.extend([merge_dict[key]])
-        target_l4.sort()
-        # Generate dicts
-        remote_dict = self.genDictFroml4(remote_l4)
-        local_dict = self.genDictFroml4(local_l4)
-        target_dict = self.genDictFroml4(target_l4)
-        ## Sync keys before syncing files, otherwise decryption with files from remote to local will throw an exception
-        self.syncKeysWithRemote(cleanup=False)
-        ## Merge number 1: Update the local repository
-        self.debug('    Update the local repository')
-        diff_l4 = self.createDiffFromDict(local_dict, target_dict)
-        for item in diff_l4:
-            if item[3] == '-':      # Remove from local repository
-                self.debug('  Remove from local repository: {}'.format(item[1]))
-                os.remove(os.path.join(self.syncFolder, item[1]))
-            elif item[3] == '+':    # Add to local repository, pull from remote
-                self.debug('  Add to local repository: {}'.format(item[1]))
-                # Pull, decrypt and move
-                remoteFilePath = self.pull(os.path.join('files', item[2]))
-                localFilePath = self.decryptFile(remoteFilePath, passphrase=self.getKey(item[2], generateKey=False))
-                localNewPath = os.path.join(self.syncFolder, item[1])
-                if not os.path.exists(os.path.dirname(localNewPath)):
-                    os.makedirs(os.path.dirname(localNewPath))
-                shutil.move(localFilePath, localNewPath)
-                #os.remove(remoteFilePath)
-            else:
-                print('Well, erm, shit: {}'.format(item))
-        # Merge lists
-        localNew_l4 = []
-        localNew_l4.extend(local_l4)
-        localNew_l4.extend(diff_l4)
-        localNew_l4.sort()
-        # Store
-        self.storeLocalLog(localNew_l4)
-        ## Merge number 2: Update the remote repository
-        self.debug('    Update the remote repository')
-        diff_l4 = self.createDiffFromDict(remote_dict, target_dict)
-        for item in diff_l4:
-            if item[3] == '-':
-                self.debug('  Remove from remote repository: {}'.format(item[1]))
-                # Do nothing at the moment :)
-            elif item[3] == '+':    # Add to local repository, pull from remote
-                self.debug('  Add to remote repository: {}'.format(item[1]))
-                # Encrypt and push, remove tmp file
-                localPath = self.encryptFile(item[1], item[2], self.getKey(item[2]))
-                remotePath = os.path.join('files', item[2])
-                self.push(localPath, remotePath)
-                os.remove(localPath)
-            else:
-                print('Well, erm, shit: {}'.format(item))
-        # Merge lists
-        remoteNew_l4 = []
-        remoteNew_l4.extend(local_l4)
-        remoteNew_l4.extend(diff_l4)
-        remoteNew_l4.sort()
-        # Store
-        serverLogPath = os.path.join(self.remotePath, 'remote.log')
-        with self.sftp.open(serverLogPath, 'w') as fOut:
-            data = json.dumps(remoteNew_l4)
-            enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='Uncompressed')
-            enc = enc.data # Just the encrypted data, nothing else
-            fOut.write(enc.decode('utf-8'))
-        ## Sync keys
-        self.syncKeysWithRemote(cleanup=self.cleanup)
-        # Unlock
-        self.unlock()
-        # Disconnect
-        self.disconnect()
-        # Done
-        self.debug('Full sync done') #*knocks itself on her virtual shoulder*')
-
-
     def sync(self):
         """
         Full sync between local and remote repository, version 2 using a queue and notifcations
@@ -1004,11 +880,21 @@ class CloudZec:
                 self.debug('      Remove from local repository: {}'.format(item[1]))
                 localFilePath = os.path.join(self.syncFolder, item[1])
                 os.remove(localFilePath)
-                # Remove emtpy folder
-                localDirPath = os.path.dirname(localFilePath)
-                if not os.listdir(localDirPath):  # If a list is empty, its boolean value is False
-                    self.debug('      Remove empty directory')
-                    os.rmdir(localDirPath)
+                # Remove emtpy folder if self.cleanup is True:
+                if self.cleanup:    # is True
+                    self.debug('      Cleaning up empty directories…')
+                    relativePath = os.path.dirname(item[1])
+                    while True:
+                        absolutePath = os.path.join(self.syncFolder, relativePath)
+                        if os.listdir(absolutePath):    # If a list contains items, its boolean value is True
+                            break
+                        else:   # If the list is empty (== empty directory)
+                            self.debug('        Removing folder {}'.format(absolutePath))
+                            os.rmdir(absolutePath)
+                            relativePath = os.path.dirname(relativePath)
+                            # Check if we already hit the top folder within self.confFolder
+                            if relativePath == os.path.dirname(relativePath):
+                                break
             elif item[3] == '+':    # Add to local repository, pull from remote
                 queuePull_l4.append(item)
             else:
@@ -1065,10 +951,9 @@ class CloudZec:
         queuePush_l4 = []
         for item in diff_l4:
             if item[3] == '-':
-                #self.debug('  Remove from remote repository: {}'.format(item[1]))
-                # Do nothing at the moment, removing files on the remote should only be done if self.cleanup is True
+                # Do nothing, removing files on the remote repository is only done if self.cleanup is True
                 pass
-            elif item[3] == '+':    # Add to remote repository, push from remote
+            elif item[3] == '+':    # Add to remote repository, push from local to remote
                 queuePush_l4.append(item)
             else:
                 print('      Well, erm, shit: {}'.format(item))
@@ -1100,7 +985,7 @@ class CloudZec:
             enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='ZIP')
             enc = enc.data # Just the encrypted data, nothing else
             fOut.write(enc.decode('utf-8'))
-        ## Sync keys
+        ## Cleanup and sync keys
         # Get a list of all avaliable hashsums (files to keep)
         filesKeep_list = []
         for item in target_dict:
@@ -1108,7 +993,7 @@ class CloudZec:
                 filesKeep_list.append(target_dict[item]['hashsum'])
         # Sync keys using this list
         self.syncKeysWithRemote(cleanup=self.cleanup, keys=filesKeep_list)
-        ## Cleanup of the remote repository
+        # Cleanup of the remote repository
         if self.cleanup:
             self.debug('  Cleaning up files on the remote repository…')
             # Get all files on remote
@@ -1116,7 +1001,7 @@ class CloudZec:
             # Cleanup
             for hashsum in filesAll_list:
                 if not hashsum in filesKeep_list:
-                    self.debug('    Removing file: {}'.format(hashsum))
+                    self.debug('    Removing file {}'.format(hashsum))
                     self.sftp.remove(os.path.join(self.remotePath, 'files', hashsum))
         # Unlock
         self.unlock()
