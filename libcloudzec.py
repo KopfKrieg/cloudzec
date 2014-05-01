@@ -184,7 +184,7 @@ class CloudZec:
         self.connect()
         # Lock
         self.lock()
-        # If self.remotePath exists:
+        # If self.remotePath exists
         if self.remotePathExists():
             # Clear everything in self.remotePath
             self.remoteTreeRemove(self.remotePath)
@@ -574,11 +574,10 @@ class CloudZec:
             if os.path.islink(filename):    # Caution: os.path.isfile() returns True if the linked item is a file! So check first, if it is a link!
                 self.debug('  Ignoring link: {}'.format(filename))
             else:
-                #timestamp = os.path.getmtime(filename)
                 timestamp = os.path.getatime(filename)
                 relativePath = filename.split(self.syncFolder)[1][1:]
                 hashsum = None
-                if relativePath in compareDict and self.useTimestamp is True:
+                if relativePath in compareDict and self.useTimestamp: # is True
                     self.debug('  Use timestamp comparison for {}'.format(relativePath))
                     if timestamp == compareDict[relativePath]['timestamp']:
                         self.debug('    They match! Speedup, yeah!')
@@ -717,7 +716,7 @@ class CloudZec:
         @param keys: A list of hashsums/keys/whatever to keep
         @param keys: list
         """
-        if self.syncKeys is True:
+        if self.syncKeys: # is True
             self.debug('Sync keys')
             # Open remote.keys
             remoteKeys = {}
@@ -741,7 +740,7 @@ class CloudZec:
                 else:
                     targetKeys[key] = remoteKeys[key]
             # Cleanup if cleanup is True and keys is not None
-            if cleanup is True and keys is not None:
+            if keys is not None and cleanup: # is True
                 self.debug('  Cleaning up keys…')
                 newTargetKeys = {}
                 for key in targetKeys:
@@ -871,7 +870,7 @@ class CloudZec:
         diff_l4 = self.createDiffFromDict(local_dict, target_dict)
         if diff_l4: # If diff_l4 is not empty
             if len(diff_l4) == 1:
-                self.notify('Updating {} file in the local repository'.format(len(diff_l4)))
+                self.notify('Updating 1 file in the local repository')
             else:
                 self.notify('Updating {} files in the local repository'.format(len(diff_l4)))
         queuePull_l4 = []
@@ -880,8 +879,8 @@ class CloudZec:
                 self.debug('      Remove from local repository: {}'.format(item[1]))
                 localFilePath = os.path.join(self.syncFolder, item[1])
                 os.remove(localFilePath)
-                # Remove emtpy folder if self.cleanup is True:
-                if self.cleanup:    # is True
+                # Remove emtpy folder if self.cleanup is True
+                if self.cleanup: # is True
                     self.debug('      Cleaning up empty directories…')
                     relativePath = os.path.dirname(item[1])
                     while True:
@@ -899,19 +898,12 @@ class CloudZec:
                 queuePull_l4.append(item)
             else:
                 print('      Well, erm, shit: {}'.format(item))
-        # Create a list of unique items to pull
-        queuePull_list = []
-        for item in queuePull_l4:
-            if not item[2] in queuePull_list:
-                queuePull_list.append(item[2])
-        len_list = len(queuePull_list)
-        len_l4 = len(queuePull_l4)
+        # Create a set (of unique items) to pull
+        queuePull_set = set( item[2] for item in queuePull_l4 )
         # Pull and decrypt
         pathes = []
         index = 0
-        for hashsum in queuePull_list:
-            #self.notify('Pull and decrypt file {} of {}, {:.2f}% done'.format(index, len_list, index/len_list*100))
-            self.debug(hashsum)
+        for hashsum in queuePull_set:
             remoteFilePath = self.pull(os.path.join('files', hashsum))
             localFilePath = self.decryptFile(remoteFilePath, passphrase=self.getKey(hashsum, generateKey=False))
             pathes.append(localFilePath)
@@ -919,7 +911,6 @@ class CloudZec:
         # Copying
         index = 0
         for item in queuePull_l4:
-            #self.notify('Moving file {} of {}, {:.2f}% done'.format(index, len_l4, index/len_l4*100))
             localFilePath = os.path.join(self.cache, item[2])
             localNewPath = os.path.join(self.syncFolder, item[1])
             self.debug('{} → {}'.format(os.path.basename(localFilePath), item[1]))
@@ -945,7 +936,7 @@ class CloudZec:
         diff_l4 = self.createDiffFromDict(remote_dict, target_dict)
         if diff_l4: # If diff_l4 is not empty
             if len(diff_l4) == 1:
-                self.notify('Updating {} file in the remote repository'.format(len(diff_l4)))
+                self.notify('Updating 1 file in the remote repository')
             else:
                 self.notify('Updating {} files in the remote repository'.format(len(diff_l4)))
         queuePush_l4 = []
@@ -962,8 +953,6 @@ class CloudZec:
         for item in queuePush_l4:
             if not item[2] in queuePush_dict:
                 queuePush_dict[item[2]] = item[1]
-        len_dict = len(queuePush_dict)
-        len_l4 = len(queuePush_l4)
         # Encrypt and push
         pathes = []
         index = 0
@@ -986,13 +975,10 @@ class CloudZec:
             enc = enc.data # Just the encrypted data, nothing else
             fOut.write(enc.decode('utf-8'))
         ## Cleanup and sync keys
-        # Get a list of all avaliable hashsums (files to keep)
-        filesKeep_list = []
-        for item in target_dict:
-            if not target_dict[item]['hashsum'] in filesKeep_list:
-                filesKeep_list.append(target_dict[item]['hashsum'])
+        # Get a set of all avaliable hashsums (files) to keep
+        filesKeep_set = set( target_dict[item]['hashsum'] for item in target_dict )
         # Sync keys using this list
-        self.syncKeysWithRemote(cleanup=self.cleanup, keys=filesKeep_list)
+        self.syncKeysWithRemote(cleanup=self.cleanup, keys=filesKeep_set)
         # Cleanup of the remote repository
         if self.cleanup:
             self.debug('  Cleaning up files on the remote repository…')
@@ -1000,7 +986,7 @@ class CloudZec:
             filesAll_list = self.sftp.listdir(os.path.join(self.remotePath, 'files'))
             # Cleanup
             for hashsum in filesAll_list:
-                if not hashsum in filesKeep_list:
+                if not hashsum in filesKeep_set:
                     self.debug('    Removing file {}'.format(hashsum))
                     self.sftp.remove(os.path.join(self.remotePath, 'files', hashsum))
         # Unlock
