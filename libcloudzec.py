@@ -180,9 +180,8 @@ class CloudZec:
         Initialises the remote host. Caution: Deletes everything!
         """
         self.debug('Remote init')
-        # Connect
+        # Connect and lock
         self.connect()
-        # Lock
         self.lock()
         # If self.remotePath exists
         if self.remotePathExists():
@@ -191,9 +190,8 @@ class CloudZec:
         # Setup self.remotePath
         self.sftp.mkdir(self.remotePath)
         self.sftp.mkdir(os.path.join(self.remotePath, 'files'))
-        # Unlock
+        # Unlock and disconnect
         self.unlock()
-        # Disconnect
         self.disconnect()
 
 
@@ -375,7 +373,7 @@ class CloudZec:
 
     def loadLocalLog(self):
         """
-        Loads local.log from self.localLog and returns it
+        Loads local log from self.localLog and returns it
 
         @return: Returns list in l4 format
         """
@@ -385,15 +383,13 @@ class CloudZec:
             with open(self.localLog, 'r') as fIn:
                 data = fIn.read()
                 local = json.loads(data)
-        #else:
-        #    local = []
-        #    self.storeLocalLog(local)
+        local.sort()
         return local
 
 
     def storeLocalLog(self, log):
         """
-        Stores client into self.localLog
+        Stores local log into self.localLog
 
         @param log: list in l4 format
         @type log: list
@@ -588,7 +584,8 @@ class CloudZec:
                 else:
                     hashsum = self.getHashOfFile(filename)
                 l4.append([timestamp, relativePath, hashsum, '+'])
-        # Return
+        # Sort and return
+        l4.sort()
         return l4
 
 
@@ -706,7 +703,7 @@ class CloudZec:
         return True
 
 
-    def syncKeysWithRemote(self, cleanup=False, keys=None):
+    def syncKeysWithBoth(self, cleanup=False, keys=None):
         """
         Synchronises keys with remote if self.syncKeys is True, also stores the merged list of keys on the local repository using self.storeKeys()
         If cleanup is True, all keys that are no longer needed will be removed (using the list of hashsum/keys as reference)
@@ -751,10 +748,10 @@ class CloudZec:
                 targetKeys = newTargetKeys  # Caution: This is not a deepcopy
             ## Only do write-operations if anything changed
             # On local
-            if not targetKeys == self.keys:     # This is not super-reliable
+            if not targetKeys == self.keys:     # Only compares the keys but its okay this time because we checked the values already a few lines above
                 self.storeKeys(targetKeys)
             # And remote
-            if not targetKeys == remoteKeys:    # This is not super-reliable
+            if not targetKeys == remoteKeys:    # Only compares the keys but its okay this time because we checked the values already a few lines above
                 serverLogPath = os.path.join(self.remotePath, 'remote.keys')
                 with self.sftp.open(serverLogPath, 'w') as fOut:
                     data = json.dumps(targetKeys)
@@ -799,8 +796,49 @@ class CloudZec:
                 timestamp = newDict[key]['timestamp']
                 hashsum = newDict[key]['hashsum']
                 diff_l4.append([timestamp, key, hashsum, '+'])
-        # Return
+        # Sort and return
+        diff_l4.sort()
         return diff_l4
+
+
+    def loadRemoteLog(self):
+        """
+        Loads remote.log and returns it
+
+        @return: Returns list in l4 format
+        """
+        self.debug('Load remote log…')
+        remote = []
+        if self.remotePathExists('remote.log'):
+            remote = []
+            # Pull remote.log and decrypt it
+            remoteLogPath = self.pull('remote.log')
+            localLogPath = self.decryptFile(remoteLogPath, passphrase=self.masterKey)
+            # Read it
+            with open(localLogPath, 'r') as fIn:
+                remote = json.load(fIn)
+            # Remove tmpfile
+            os.remove(localLogPath)
+        # Sort and remote
+        remote.sort()
+        return remote
+
+
+    def storeRemoteLog(self, log):
+        """
+        Stores remote log
+
+        @param log: list in l4 format
+        @type log: list
+        """
+        self.debug('Store remote log…')
+        log.sort()
+        remoteLogPath = os.path.join(self.remotePath, 'remote.log')
+        with self.sftp.open(remoteLogPath, 'w') as fOut:
+            data = json.dumps(log)
+            enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='ZIP')
+            enc = enc.data # Just the encrypted data, nothing else
+            fOut.write(enc.decode('utf-8'))
 
 
     def sync(self):
@@ -811,7 +849,7 @@ class CloudZec:
         self.notify('Starting full sync…')
         ## Real files -> Local files
         self.debug('  Syncing real files and local files')
-        # Open local.log
+        # Load local.log
         local_l4 = self.loadLocalLog()
         # Load real files
         real_l4 = self.getRealFilesl4(local_l4)
@@ -828,23 +866,12 @@ class CloudZec:
         self.storeLocalLog(new_l4)
         ## Local files <-> Remote files
         self.debug('  Syncing local files and remote files')
-        # Connect
+        # Connect and lock
         self.connect()
-        # Lock
         self.lock()
-        # Open remote.log
-        remote_l4 = []
-        if self.remotePathExists('remote.log'):
-            remote_l4 = []
-            # Pull remote.log and decrypt it
-            remoteLogPath = self.pull('remote.log')
-            localLogPath = self.decryptFile(remoteLogPath, passphrase=self.masterKey)
-            # Read it
-            with open(localLogPath, 'r') as fIn:
-                remote_l4 = json.load(fIn)
-            # Remove tmpfile
-            os.remove(localLogPath)
-        # Open local.log
+        # Load remote.log
+        remote_l4 = self.loadRemoteLog()
+        # Load local.log
         local_l4 = self.loadLocalLog()
         ## Create „target“ list using a fu***** bad algorithm
         target_l4 = []
@@ -862,8 +889,8 @@ class CloudZec:
         remote_dict = self.genDictFroml4(remote_l4)
         local_dict = self.genDictFroml4(local_l4)
         target_dict = self.genDictFroml4(target_l4)
-        ## Sync keys before syncing files, otherwise decryption with files from remote to local will throw an exception
-        self.syncKeysWithRemote(cleanup=False)
+        ## Sync keys before syncing files, otherwise decryption with files from remote to local will throw an exception, don't cleanup keys
+        self.syncKeysWithBoth()
         ## Merge number 1: Update the local repository
         self.debug('    Update the local repository')
         # Get files to remove and add
@@ -902,14 +929,11 @@ class CloudZec:
         queuePull_set = set( item[2] for item in queuePull_l4 )
         # Pull and decrypt
         pathes = []
-        index = 0
         for hashsum in queuePull_set:
             remoteFilePath = self.pull(os.path.join('files', hashsum))
             localFilePath = self.decryptFile(remoteFilePath, passphrase=self.getKey(hashsum, generateKey=False))
             pathes.append(localFilePath)
-            index += 1
         # Copying
-        index = 0
         for item in queuePull_l4:
             localFilePath = os.path.join(self.cache, item[2])
             localNewPath = os.path.join(self.syncFolder, item[1])
@@ -919,17 +943,11 @@ class CloudZec:
             shutil.copy(localFilePath, localNewPath)
             # Update access and modification-time of the file to speedup comparison on the next sync
             os.utime(localNewPath, (item[0], item[0]))
-            index += 1
         # Removing source-files
         for item in pathes:
             os.remove(item)
-        # Merge lists
-        localNew_l4 = []
-        localNew_l4.extend(local_l4)
-        localNew_l4.extend(diff_l4)
-        localNew_l4.sort()
-        # Store
-        self.storeLocalLog(localNew_l4)
+        # Store remote log. Do not merge the remote_l4 and the diff_l4, just store the target_l4. If the remote log got removed, you would only store the diff and this is not enough. Only the target_l4 contains the whole history
+        self.storeLocalLog(target_l4)
         ## Merge number 2: Update the remote repository
         self.debug('    Update the remote repository')
         # Get files to remove and add
@@ -942,7 +960,7 @@ class CloudZec:
         queuePush_l4 = []
         for item in diff_l4:
             if item[3] == '-':
-                # Do nothing, removing files on the remote repository is only done if self.cleanup is True
+                # Do nothing, removing files on the remote repository is done later in a more efficient way
                 pass
             elif item[3] == '+':    # Add to remote repository, push from local to remote
                 queuePush_l4.append(item)
@@ -955,30 +973,19 @@ class CloudZec:
                 queuePush_dict[item[2]] = item[1]
         # Encrypt and push
         pathes = []
-        index = 0
         for hashsum in queuePush_dict:
             self.debug(hashsum)
             localPath = self.encryptFile(queuePush_dict[hashsum], hashsum, self.getKey(hashsum))
             remotePath = os.path.join('files', hashsum)
             self.push(localPath, remotePath)
             os.remove(localPath)
-        # Merge lists
-        remoteNew_l4 = []
-        remoteNew_l4.extend(local_l4)
-        remoteNew_l4.extend(diff_l4)
-        remoteNew_l4.sort()
-        # Store
-        serverLogPath = os.path.join(self.remotePath, 'remote.log')
-        with self.sftp.open(serverLogPath, 'w') as fOut:
-            data = json.dumps(remoteNew_l4)
-            enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='ZIP')
-            enc = enc.data # Just the encrypted data, nothing else
-            fOut.write(enc.decode('utf-8'))
+        # Store remote log. Do not merge the remote_l4 and the diff_l4, just store the target_l4. If the remote log got removed, you would only store the diff and this is not enough. Only the target_l4 contains the whole history
+        self.storeRemoteLog(target_l4)
         ## Cleanup and sync keys
         # Get a set of all avaliable hashsums (files) to keep
         filesKeep_set = set( target_dict[item]['hashsum'] for item in target_dict )
         # Sync keys using this list
-        self.syncKeysWithRemote(cleanup=self.cleanup, keys=filesKeep_set)
+        self.syncKeysWithBoth(cleanup=self.cleanup, keys=filesKeep_set)
         # Cleanup of the remote repository
         if self.cleanup:
             self.debug('  Cleaning up files on the remote repository…')
@@ -989,9 +996,8 @@ class CloudZec:
                 if not hashsum in filesKeep_set:
                     self.debug('    Removing file {}'.format(hashsum))
                     self.sftp.remove(os.path.join(self.remotePath, 'files', hashsum))
-        # Unlock
+        # Unlock and disconnect
         self.unlock()
-        # Disconnect
         self.disconnect()
         # Done
         self.debug('Full sync done') #*knocks itself on her virtual shoulder*')
