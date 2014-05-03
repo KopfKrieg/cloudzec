@@ -1,6 +1,6 @@
-# CloudZec sync #
+# ![CloudZec sync](images/cloudzec_logo_mid.png) #
 
-CloudZec sync (short „cloudzec“) is a free synchronisation solution with end-to-end encryption, based on stable technologies like GnuPG and SFTP.
+CloudZec sync (short „CloudZec“) is a free synchronisation solution with end-to-end encryption, based on stable technologies like GnuPG and SFTP.
 
 ## Features ##
 - No additional server software required
