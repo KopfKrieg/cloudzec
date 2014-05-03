@@ -18,7 +18,7 @@ DEBUG = False
 
 
 ## Class
-class Notification():
+class BaseNotification():
     def __init__(self, notifyClass, name, icon=None):
         """
         Basic notification class
@@ -31,11 +31,18 @@ class Notification():
         @type icon: str
         """
         # Setup
-        self.notification = None
         self.name = name
-        self.icon = icon
-        # Show starting message
         self.notification = notifyClass.Notification(self.name, 'Starting…')
+        # Set Icon
+        if icon is not None:
+            try:
+                from gi.repository import GdkPixbuf
+                pb = GdkPixbuf.Pixbuf.new_from_file(icon)
+                self.notification.set_icon_from_pixbuf(pb)
+            except ImportError as e:
+                print('Couldn\'t set icon: {}'.format(e))
+        # Show message
+        self.notification.update(self.name, 'Starting…')
         self.notification.show()
 
 
@@ -43,7 +50,7 @@ class Notification():
         """
         Update the notification message
         """
-        self.notification.update(self.name, message, self.icon)
+        self.notification.update(self.name, message)
         self.notification.show()        
 
 
@@ -87,8 +94,15 @@ def main():
     try:
         import notify2
         name = 'CloudZec'
+        # Find icon
+        icon = None
+        if os.path.exists('cloudzec_tray_48.png'):
+            icon = 'cloudzec_tray_48.png'
+        elif os.path.exists('/usr/share/icons/hicolor/48x48/cloudzec.png'):
+            icon = '/usr/share/icons/hicolor/48x48/cloudzec.png'
+        # Init and instance
         notify2.init(name)
-        n = Notification(notify2, name)
+        n = BaseNotification(notify2, name, icon)
     except ImportError as e:
         print('Couldn\'t find notify2-bindings')
     ## Arguments
