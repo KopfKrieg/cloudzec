@@ -98,8 +98,8 @@ def main():
         icon = None
         if os.path.exists('cloudzec_tray_48.png'):
             icon = 'cloudzec_tray_48.png'
-        elif os.path.exists('/usr/share/icons/hicolor/48x48/cloudzec.png'):
-            icon = '/usr/share/icons/hicolor/48x48/cloudzec.png'
+        elif os.path.exists('/usr/share/icons/hicolor/48x48/apps/cloudzec.png'):
+            icon = '/usr/share/icons/hicolor/48x48/apps/cloudzec.png'
         # Init and instance
         notify2.init(name)
         n = BaseNotification(notify2, name, icon)
