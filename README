@@ -59,17 +59,6 @@ cp cloudzec/cloudzec run/cloudzec
 cp cloudzec/libcloudzec.py run/libcloudzec.py
 ```
 
-#### Patch GnuPG in libcloudzec.py ####
-Open run/libcloudzec.py in your favourite editor. Search for this line:
-```
-         self.gpg = gnupg.GPG(binary=binary, homedir=homedir)
-```
-And replace it with the following:
-```
-         self.gpg = gnupg.GPG(gnupghome=home)
-         self.gpg.encoding = 'utf-8'
-```
-
 ## Run CloudZec sync ##
 
 ### On the first start, do the following ###

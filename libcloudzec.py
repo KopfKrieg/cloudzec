@@ -125,13 +125,13 @@ class CloudZec:
             # Don't ask anything in __init__()
             raise Exception('You need to set a username in {}'.format(self.confFile))
         # Create gpg instance | needs to be defined before en/decrypting anything
-        binary = '/usr/bin/gpg2' # No symlinks allowed
-        homedir = os.path.join(home, '.gnupg')
-        #keyring = os.path.join(homedir, 'pubring.gpg')
-        #secring = os.path.join(homedir, 'secring.gpg')
-        #self.gpg = gnupg.GPG(binary=binary, homedir=homedir, keyring=keyring, secring=secring)
-        self.gpg = gnupg.GPG(binary=binary, homedir=homedir)
-        #self.gpg.use_agent = True
+        if gnupg.__version__.startswith('1.'): # The „new“ version of GnuPG from isislovecruft on GitHub
+            binary = '/usr/bin/gpg2' # No symlinks allowed
+            homedir = os.path.join(home, '.gnupg')
+            self.gpg = gnupg.GPG(binary=binary, homedir=homedir)
+        else:   # „Old“ versions or other versions of GnuPG:
+            self.gpg = gnupg.GPG(gnupghome=home)
+            self.gpg.encoding = 'utf-8'
         ## Set empty rng (random number generator), needs to be done before loading master key
         self.rng = None
         ## Load master key | Needs to be done before storing something (encrypted)
