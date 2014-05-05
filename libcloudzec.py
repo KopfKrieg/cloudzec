@@ -1000,4 +1000,5 @@ class CloudZec:
         self.unlock()
         self.disconnect()
         # Done
+        self.notify('Full sync done')
         self.debug('Full sync done') #*knocks itself on her virtual shoulder*')
