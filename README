@@ -29,7 +29,7 @@ CloudZec sync (short „CloudZec“) is a free synchronisation solution with end
 - Follow the instructions under „Run CloudZec sync“
 
 ### Ubuntu 14.04 | Debian 8  ###
-Installing CloudZec sync on Ubuntu (or Debian) is still not a trivial task due to old versions of the packages and bad python3 support. Anyway, if you really want to try it, follow the instructions:
+Pyhton3 is still not the standard python interpreter on Ubuntu (or Debian) and due to the lack of python3 support you need to build python3-paramiko yourself. Just follow the instructions, it's easy:
 
 #### Install the dependencies ####
 ```sudo apt-get install python3 python3-gnupg python3-crypto python3-ecdsa```
@@ -57,7 +57,10 @@ mkdir run
 mv build/usr/local/lib/python3.4/dist-packages/paramiko run/
 cp cloudzec/cloudzec run/cloudzec
 cp cloudzec/libcloudzec.py run/libcloudzec.py
+cp cloudzec/cloudzec_tray_48.png run/cloudzec_tray_48.png
 ```
+
+You can now run CloudZec sync from ```run``` via ```./cloudzec```
 
 ## Run CloudZec sync ##
 
