@@ -260,7 +260,7 @@ class CloudZec:
             except ImportError as e:
                 print('Couldn\'t find keyring-bindings')
                 self.masterKeyFile = os.path.join(self.confFolder, 'masterKey')
-                print('  Use {} as fallback'.format(self.masterKeyFile))
+                print('  Using {} as fallback'.format(self.masterKeyFile))
         # If self.masterkeyFile is still None, use the keyring
         if self.masterKeyFile is None:
             p = self.keyring.get_password('CloudZec sync', 'master')
@@ -307,10 +307,6 @@ class CloudZec:
         self.debug('Load keys: {}'.format(self.keysFile))
         if os.path.exists(self.keysFile):
             with open(self.keysFile, 'r') as fIn:
-                #enc = fIn.read()
-                #data = self.gpg.decrypt(enc, passphrase=self.masterKey)
-                #data = data.data # Just the encrypted data, nothing else
-                #self.keys = json.loads(data.decode('utf-8'))
                 self.keys = json.load(fIn)
         else:
             self.storeKeys()
@@ -323,12 +319,7 @@ class CloudZec:
         self.debug('Store keys: {}'.format(self.keysFile))
         if keys is not None:
             self.keys = keys
-        # Either use open(self.keysFile, 'wb') or use enc.decode('utf-8'). Both are ugly hacks
         with open(self.keysFile, 'w') as fOut:
-            #data = json.dumps(self.keys)
-            #enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='Uncompressed')
-            #enc = enc.data # Just the encrypted data, nothing else
-            #fOut.write(enc.decode('utf-8'))
             json.dump(self.keys, fOut, sort_keys=True, indent=2)
 
 
@@ -532,14 +523,14 @@ class CloudZec:
         self.debug('Generate dict from l4 format list')
         l4.sort() # Sort by timestamp
         d = dict()
-        for entry in l4:
-            if entry[3] == '+':
-                timestamp = entry[0]
-                relativePath = entry[1]
-                hashsum = entry[2]
+        for item in l4:
+            if item[3] == '+':
+                timestamp = item[0]
+                relativePath = item[1]
+                hashsum = item[2]
                 d[relativePath] = {'timestamp':timestamp, 'hashsum':hashsum}
-            elif entry[3] == '-':
-                relativePath = entry[1]
+            elif item[3] == '-':
+                relativePath = item[1]
                 if relativePath in d:
                     del d[relativePath]
             else:
@@ -902,7 +893,9 @@ class CloudZec:
                 self.notify('Updating {} files in the local repository'.format(len(diff_l4)))
         queuePull_l4 = []
         for item in diff_l4:
-            if item[3] == '-':      # Remove from local repository
+            if item[3] == '+':      # Add to local repository, pull from remote
+                queuePull_l4.append(item)
+            elif item[3] == '-':    # Remove from local repository
                 self.debug('      Remove from local repository: {}'.format(item[1]))
                 localFilePath = os.path.join(self.syncFolder, item[1])
                 os.remove(localFilePath)
@@ -921,8 +914,6 @@ class CloudZec:
                             # Check if we already hit the top folder within self.confFolder
                             if relativePath == os.path.dirname(relativePath):
                                 break
-            elif item[3] == '+':    # Add to local repository, pull from remote
-                queuePull_l4.append(item)
             else:
                 print('      Well, erm, shit: {}'.format(item))
         # Create a set (of unique items) to pull
@@ -959,11 +950,11 @@ class CloudZec:
                 self.notify('Updating {} files in the remote repository'.format(len(diff_l4)))
         queuePush_l4 = []
         for item in diff_l4:
-            if item[3] == '-':
+            if item[3] == '+':      # Add to remote repository, push from local to remote
+                queuePush_l4.append(item)
+            elif item[3] == '-':
                 # Do nothing, removing files on the remote repository is done later in a more efficient way
                 pass
-            elif item[3] == '+':    # Add to remote repository, push from local to remote
-                queuePush_l4.append(item)
             else:
                 print('      Well, erm, shit: {}'.format(item))
         # Create a dict of unique items to push
