@@ -76,8 +76,8 @@ def showHelp():
     print('   -> Full sync between remote and local repository, „x“ is the time between syncs in minutes or 15 minutes if not given\n')
     print('  debug')
     print('   -> At this at the end of any other command to get debug-output')
-    print('    -> cli.py init debug')
-    print('    -> cli.py sync debug')
+    print('    -> cloudzec init debug')
+    print('    -> cloudzec sync debug')
     print()
 
 
@@ -132,7 +132,7 @@ def main():
         if len(args) > 1:
             if args[1].isdigit():
                 t = int(args[1])
-        debug('Daemon mode with an interval of {} minute{}'.format(t, 's' if t < 2 else None))
+        debug('Daemon mode with an interval of {} minute{}'.format(t, 's' if t = 1 else None))
         # Setup and run
         c = None
         if n is None:
@@ -141,7 +141,7 @@ def main():
             c = libcloudzec.CloudZec(notifyCallback=n.notify, debug=DEBUG)
         while True:
             c.sync()
-            debug('Sleeping for {} minute{}'.format(t, 's' if t < 2 else None))
+            debug('Sleeping for {} minute{}'.format(t, 's' if t = 1 else None))
             time.sleep(t*60)
     else:
         print('Unknown argument „{}“'.format(args[0]))
@@ -151,7 +151,6 @@ def main():
         n.close()
     ## Return
     return 0
-
 
 if __name__ == '__main__':
     main()
