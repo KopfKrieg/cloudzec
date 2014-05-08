@@ -96,8 +96,8 @@ def main():
         name = 'CloudZec'
         # Find icon
         icon = None
-        if os.path.exists('cloudzec_tray_48.png'):
-            icon = 'cloudzec_tray_48.png'
+        if os.path.exists('icons/cloudzec_48.png'):
+            icon = 'icons/cloudzec_48.png'
         elif os.path.exists('/usr/share/icons/hicolor/48x48/apps/cloudzec.png'):
             icon = '/usr/share/icons/hicolor/48x48/apps/cloudzec.png'
         # Init and instance
@@ -132,7 +132,7 @@ def main():
         if len(args) > 1:
             if args[1].isdigit():
                 t = int(args[1])
-        debug('Daemon mode with an interval of {} minute{}'.format(t, 's' if t = 1 else None))
+        debug('Daemon mode with an interval of {} minute{}'.format(t, 's' if t == 1 else None))
         # Setup and run
         c = None
         if n is None:
@@ -141,7 +141,7 @@ def main():
             c = libcloudzec.CloudZec(notifyCallback=n.notify, debug=DEBUG)
         while True:
             c.sync()
-            debug('Sleeping for {} minute{}'.format(t, 's' if t = 1 else None))
+            debug('Sleeping for {} minute{}'.format(t, 's' if t == 1 else None))
             time.sleep(t*60)
     else:
         print('Unknown argument „{}“'.format(args[0]))
