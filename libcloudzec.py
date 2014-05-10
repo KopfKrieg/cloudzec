@@ -125,12 +125,12 @@ class CloudZec:
             # Don't ask anything in __init__()
             raise Exception('You need to set a username in {}'.format(self.confFile))
         # Create gpg instance | needs to be defined before en/decrypting anything
-        if gnupg.__version__.startswith('1.'): # The „new“ version of GnuPG from isislovecruft on GitHub
+        homedir = os.path.join(home, '.gnupg')
+        if gnupg.__version__.startswith('1.2'): # The „new“ version of GnuPG from isislovecruft on GitHub
             binary = '/usr/bin/gpg2' # No symlinks allowed
-            homedir = os.path.join(home, '.gnupg')
             self.gpg = gnupg.GPG(binary=binary, homedir=homedir)
         else:   # „Old“ versions or other versions of GnuPG:
-            self.gpg = gnupg.GPG(gnupghome=home)
+            self.gpg = gnupg.GPG(gnupghome=homedir)
             self.gpg.encoding = 'utf-8'
         ## Set empty rng (random number generator), needs to be done before loading master key
         self.rng = None
@@ -642,9 +642,11 @@ class CloudZec:
             return pathOut
         # Else encrypt it
         with open(pathIn, 'rb') as fIn:
-            #with open(pathOut, 'wb') as fOut:
-            #    self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo='Uncompressed', output=fOut)
-            binary = self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo=self.compression)
+            binary = None
+            if gnupg.__version__.startswith('1.2'): # The „new“ version of GnuPG from isislovecruft on GitHu
+                binary = self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo=self.compression)
+            else:   # „Old“ versions or other versions of GnuPG:
+                binary = self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, symmetric=True, always_trust=True, recipients=None)
             with open(pathOut, 'wb') as fOut:
                 fOut.write(binary.data)
         # And return
@@ -746,7 +748,11 @@ class CloudZec:
                 serverLogPath = os.path.join(self.remotePath, 'remote.keys')
                 with self.sftp.open(serverLogPath, 'w') as fOut:
                     data = json.dumps(targetKeys)
-                    enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='ZIP')
+                    enc = None
+                    if gnupg.__version__.startswith('1.2'): # The „new“ version of GnuPG from isislovecruft on GitHub
+                        enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='ZIP')
+                    else:   # „Old“ versions or other versions of GnuPG:
+                        enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, symmetric=True, recipients=None)
                     enc = enc.data # Just the encrypted data, nothing else
                     fOut.write(enc.decode('utf-8'))
 
@@ -827,7 +833,11 @@ class CloudZec:
         remoteLogPath = os.path.join(self.remotePath, 'remote.log')
         with self.sftp.open(remoteLogPath, 'w') as fOut:
             data = json.dumps(log)
-            enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='ZIP')
+            enc = None
+            if gnupg.__version__.startswith('1.2'): # The „new“ version of GnuPG from isislovecruft on GitHub
+                enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='ZIP')
+            else:   # „Old“ versions or other versions of GnuPG:
+                enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, symmetric=True, recipients=None)
             enc = enc.data # Just the encrypted data, nothing else
             fOut.write(enc.decode('utf-8'))
 
