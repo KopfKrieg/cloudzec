@@ -86,6 +86,15 @@ def debug(text):
         print('Debug: {}'.format(text))
 
 
+def sync(cloud, notifications):
+    try:
+        cloud.sync()
+    except Exception as e:
+        if notifications is not None:
+            notifications.notify('An error occurred: {}'.format(e))
+            raise e
+
+
 def main():
     ## Data
     global DEBUG
@@ -126,7 +135,7 @@ def main():
             c = libcloudzec.CloudZec(debug=DEBUG)
         else:
             c = libcloudzec.CloudZec(notifyCallback=n.notify, debug=DEBUG)
-        c.sync()
+        sync(c, n)
     elif args[0] == 'daemon':       # Sync remote <-> local in daemon mode
         t = 15
         if len(args) > 1:
@@ -140,7 +149,7 @@ def main():
         else:
             c = libcloudzec.CloudZec(notifyCallback=n.notify, debug=DEBUG)
         while True:
-            c.sync()
+            sync(c, n)
             debug('Sleeping for {} minute{}'.format(t, 's' if t == 1 else None))
             time.sleep(t*60)
     else:
