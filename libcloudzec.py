@@ -408,7 +408,7 @@ class CloudZec:
                 self._transport.connect(username=self.remoteUsername, password=getpass.getpass('    Password for remote host: '))
             except paramiko.ssh_exception.BadAuthenticationType:
                 self.debug('      Hm. Login with password doesn\'t work. Did you set „identFile“ in {}?'.format(self.confFile))
-                raise
+                raise Exception('Remote host doesn\'t accept passwords')
         else:
             self.debug('  Use identity file for login')
             key = None
@@ -449,7 +449,13 @@ class CloudZec:
         name = None
         with self.sftp.open('lock', 'r') as f:
             data = f.read()
-            name = json.loads(data)
+            if isinstance(data, str):
+                name = json.loads(data)
+            elif isinstance(data, bytes):
+                data = data.decode('utf-8')
+                name = json.loads(data)
+            else:
+                raise TypeError('Neither a string nor a byte array: {}'.format(type(data)))
         return name
 
 
@@ -466,7 +472,7 @@ class CloudZec:
             else:
                 self.debug('  Already locked (from {})'.format(name))
                 self.disconnect()
-                raise Exception('  Cannot lock remote directory (locked by {})'.format(name))
+                raise Exception('Cannot lock remote directory (locked by {})'.format(name))
         else:
             with self.sftp.open('lock', 'w') as f:
                 json.dump(self.device, f)
@@ -488,7 +494,7 @@ class CloudZec:
                     self.debug('  Overriding lock - removing it')
                 else:
                     self.disconnect()
-                    raise Exception('  Could not unlock remote directory')
+                    raise Exception('Could not unlock remote directory')
         else:
             self.debug('  Remote host is not locked')
 
@@ -925,7 +931,7 @@ class CloudZec:
                             if relativePath == os.path.dirname(relativePath):
                                 break
             else:
-                print('      Well, erm, shit: {}'.format(item))
+                print('Well, erm, shit: {}'.format(item))
         # Create a set (of unique items) to pull
         queuePull_set = set( item[2] for item in queuePull_l4 )
         # Pull and decrypt
@@ -966,7 +972,7 @@ class CloudZec:
                 # Do nothing, removing files on the remote repository is done later in a more efficient way
                 pass
             else:
-                print('      Well, erm, shit: {}'.format(item))
+                print('Well, erm, shit: {}'.format(item))
         # Create a dict of unique items to push
         queuePush_dict = {}
         for item in queuePush_l4:
