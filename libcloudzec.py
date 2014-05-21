@@ -203,7 +203,7 @@ class CloudZec:
         @type text: str
         """
         if self._debug:
-            print('Debug: {}'.format(text))
+            print('{}'.format(text))
 
 
     def loadConfiguration(self):

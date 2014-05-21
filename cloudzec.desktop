@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=CloudZec sync
-Exec=cloudzec sync
+Exec=cloudzec --sync
 Icon=cloudzec
 Terminal=false
 Type=Application

@@ -7,14 +7,10 @@
 
 ## Imports
 import os
-import sys
 import time
+import argparse
 # External
 import libcloudzec
-
-
-## Data
-DEBUG = False
 
 
 ## Class
@@ -62,29 +58,6 @@ class BaseNotification():
 
 
 ## Application
-def showHelp():
-    print('Possible arguments:\n')
-    print('  help')
-    print('   -> Shows this help\n')
-    print('  init')
-    print('   -> Initialise the local repository\n')
-    print('  remoteinit')
-    print('   -> Initialise the remote repository\n')
-    print('  sync')
-    print('   -> Full sync between remote and local repository\n')
-    print('  daemon x')
-    print('   -> Full sync between remote and local repository, „x“ is the time between syncs in minutes or 15 minutes if not given\n')
-    print('  debug')
-    print('   -> At this at the end of any other command to get debug-output')
-    print('    -> cloudzec init debug')
-    print('    -> cloudzec sync debug')
-    print()
-
-
-def debug(text):
-    if DEBUG:
-        print('Debug: {}'.format(text))
-
 
 def sync(cloud, notifications):
     try:
@@ -95,10 +68,7 @@ def sync(cloud, notifications):
             raise e
 
 
-def main():
-    ## Data
-    global DEBUG
-    ## Setup notify
+def setup_notify():
     n = None
     try:
         import notify2
@@ -107,42 +77,53 @@ def main():
         icon = None
         if os.path.exists('/usr/share/icons/hicolor/48x48/apps/cloudzec.png'):
             icon = '/usr/share/icons/hicolor/48x48/apps/cloudzec.png'
-        elif os.path.exists('icons/cloudzec_48.png'):
+        elif os.path.exists('icons/clodudzec_48.png'):
             icon = 'icons/cloudzec_48.png'
         # Init and instance
         notify2.init(name)
         n = BaseNotification(notify2, name, icon)
     except ImportError as e:
         print('Couldn\'t find notify2-bindings')
-    ## Arguments
-    args = sys.argv[1:]
-    # Help    
-    if 'help' in args or len(args) == 0:
-        showHelp()
-        return
-    # Debug
-    if 'debug' in args:
+    return n
+
+
+def main():
+    ## Parser
+    # Init parser
+    parser = argparse.ArgumentParser()
+    # Optional arguments
+    parser.add_argument('-v', '--verbose', action='store_true', help='show debug messages')
+    # Conflicting options
+    parser_group = parser.add_mutually_exclusive_group() #required=True)
+    parser_group.add_argument('-i', '--init', action='store_true', help='initialise the local repository')
+    parser_group.add_argument('-r', '--remoteinit', action='store_true', help='initialise the remote repository')
+    parser_group.add_argument('-s', '--sync', action='store_true', help='full sync between remote and local repository')
+    parser_group.add_argument('-d', '--daemon', nargs='?', type=int, const=15, metavar='time', help='full sync between remote and local repository, [time] specifies the time between syncs in minutes (default 15 minutes)')
+    # Get arguments
+    args = parser.parse_args()
+    # Debug?
+    DEBUG = False
+    if args.verbose:
         DEBUG = True
     # Everything else
-    if args[0] == 'init':           # Local init
+    n = None
+    if args.init:           # Init
         c = libcloudzec.CloudZec(genMasterKey=True, debug=DEBUG)
-    elif args[0] == 'remoteinit':   # Remote init
+    elif args.remoteinit:   # Remoteinit
         c = libcloudzec.CloudZec(debug=DEBUG)
         c.remoteinit()
-    elif args[0] == 'sync':         # Sync remote <-> local
+    elif args.sync:         # Sync
+        n = setup_notify()
         c = None
         if n is None:
             c = libcloudzec.CloudZec(debug=DEBUG)
         else:
             c = libcloudzec.CloudZec(notifyCallback=n.notify, debug=DEBUG)
         sync(c, n)
-    elif args[0] == 'daemon':       # Sync remote <-> local in daemon mode
-        t = 15
-        if len(args) > 1:
-            if args[1].isdigit():
-                t = int(args[1])
-        debug('Daemon mode with an interval of {} minute{}'.format(t, 's' if t == 1 else None))
-        # Setup and run
+    elif args.daemon:       # Daemon
+        n = setup_notify()
+        t = args.daemon
+        print('Daemon mode with an interval of {} minute{}'.format(t, 's' if t == 1 else None))
         c = None
         if n is None:
             c = libcloudzec.CloudZec(debug=DEBUG)
@@ -152,9 +133,8 @@ def main():
             sync(c, n)
             debug('Sleeping for {} minute{}'.format(t, 's' if t == 1 else None))
             time.sleep(t*60)
-    else:
-        print('Unknown argument „{}“'.format(args[0]))
-        showHelp()
+    else:                   # Show help
+        parser.print_help()
     ## Close Notifications
     if n is not None:
         n.close()
