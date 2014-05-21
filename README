@@ -57,7 +57,8 @@ mkdir run
 mv build/usr/local/lib/python3.4/dist-packages/paramiko run/
 cp cloudzec/cloudzec run/cloudzec
 cp cloudzec/libcloudzec.py run/libcloudzec.py
-cp cloudzec/cloudzec_tray_48.png run/cloudzec_tray_48.png
+mkdir run/icon
+cp cloudzec/icon/cloudzec_48.png run/icon/cloudzec_48.png
 ```
 
 You can now run CloudZec sync from ```run``` via ```./cloudzec```
@@ -65,19 +66,19 @@ You can now run CloudZec sync from ```run``` via ```./cloudzec```
 ## Run CloudZec sync ##
 
 ### On the first start, do the following ###
-- Run ```cloudzec init```
+- Run ```cloudzec --init```
 - Edit your config-file (under ```~/.cloudzec/cloudzec.conf```)
-- Run ```cloudzec remoteinit```
+- Run ```cloudzec --remoteinit```
 - Done
 
 ### General options ###
 There are only a few options for ```cloudzec```:
-- help → Shows the help
-- init → Initialises the local repository
-- remoteinit → Initialises the remote repository
-- sync → Full sync between remote and local repository
-- daemon [x] → Full sync between remote and local repository, „x“ is the time between full syncs in minutes, or 15 minutes if not specified
-- debug → Append „debug“ at the end of any command to get debug output, e.g. ```cloudzec sync debug``` or ```cloudzec daemon 10 debug```
+- -h, --help → Shows the help
+- -v, --verbose → Show debug messages
+- -i, --init → Initialise the local repository
+- -r, --remoteinit → Initialise the remote repository
+- -s, --sync → Full sync between remote and local repository
+- -d [time], --daemon [time] → Full sync between remote and local repository, [time] specifies the time between syncs in minutes (default 15 minutes)
 
 ## License ##
 
