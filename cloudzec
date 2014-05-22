@@ -47,14 +47,14 @@ class BaseNotification():
         Update the notification message
         """
         self.notification.update(self.name, message)
-        self.notification.show()        
+        self.notification.show()
 
 
     def close(self):
         """
         Closes the notification, do this before deleting the instanced object (e.g. before quitting the program)
         """
-        self.notification.close()        
+        self.notification.close()
 
 
 ## Application
@@ -115,23 +115,23 @@ def main():
     elif args.sync:         # Sync
         n = setup_notify()
         c = None
-        if n is None:
-            c = libcloudzec.CloudZec(debug=DEBUG)
-        else:
+        if n:
             c = libcloudzec.CloudZec(notifyCallback=n.notify, debug=DEBUG)
+        else:
+            c = libcloudzec.CloudZec(debug=DEBUG)
         sync(c, n)
     elif args.daemon:       # Daemon
         n = setup_notify()
         t = args.daemon
-        print('Daemon mode with an interval of {} minute{}'.format(t, 's' if t == 1 else None))
+        print('Daemon mode with an interval of {} minute{}'.format(t, '' if t == 1 else 's'))
         c = None
-        if n is None:
-            c = libcloudzec.CloudZec(debug=DEBUG)
-        else:
+        if n:
             c = libcloudzec.CloudZec(notifyCallback=n.notify, debug=DEBUG)
+        else:
+            c = libcloudzec.CloudZec(debug=DEBUG)
         while True:
             sync(c, n)
-            debug('Sleeping for {} minute{}'.format(t, 's' if t == 1 else None))
+            print('Sleeping for {} minute{}'.format(t, '' if t == 1 else 's'))
             time.sleep(t*60)
     else:                   # Show help
         parser.print_help()
