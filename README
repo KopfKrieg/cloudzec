@@ -14,7 +14,7 @@ CloudZec sync (short „CloudZec“) is a free synchronisation solution with end
 ### General ###
 - Install python3
 - Install the python3 version of paramiko
-- Install somehow [python-gnupg](https://github.com/isislovecruft/python-gnupg)
+- Install python3-gnupg or (better) the following fork: [python-gnupg](https://github.com/isislovecruft/python-gnupg)
 - For notification support install python3-notify2
 - For the CloudZec icon in notifications install the python3 version of GObject Introspection
 - For keyring support install python3-keyring

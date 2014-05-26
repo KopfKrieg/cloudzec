@@ -73,7 +73,7 @@ class CloudZec:
         self.keys      = {}             # Keys for data en/decryption
         # Default configuration, use loadConfiguration() to override
         self.cache = os.path.join(self.confFolder, 'cache')
-        self.cleanup = False            # If True, everything that is no longer needed will be removed from both, local and remote (keys on both repositories and files on the remote)
+        self.cleanup = True            # If True, everything that is no longer needed will be removed from both, local and remote (keys on both repositories and files on the remote)
         self.compression = 'none'       # Preferred compression algorithm |"none": Uncompressed (best for binary files) |"ZIP": Zip compression, PGP-compatible |"ZLIB": Zlib compression, incompatible to PGP |"BZIP2": Bzip2 compression, only compatible with GnuPG | Choose wisely
         self.device = platform.node()   # Device name, neccessary for lock-name on remote
         self.encryption = 'AES256'      # Preferred encryption algorithm
