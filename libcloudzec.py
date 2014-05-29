@@ -6,12 +6,14 @@
 #
 # This is the basic CloudZec Class
 #
+#
 ## Server structure
 # $serverpath
 # |-- files
 # |-- lock
 # |-- remote.keys   (encrypted)
 # `-- remote.log    (encrypted)
+#
 #
 ## Local structure
 # $syncFolder
@@ -24,6 +26,7 @@
 #  |-- local.log
 #  |-- cloudzec.conf
 #  `-- masterKey
+#
 #
 ## local.log and remote.log | encrypted with masterKey | l4-format
 #
@@ -38,6 +41,15 @@
 # 1  - string | Relative path of file, e.g. folder/file1.txt
 # 2  - string | Hashsum of file
 # 3  - string | Action, can either be + or -
+#
+#
+## local.keys and remote.keys | ecnrypted with masterKey
+#
+# {
+#   "hashsum": ["encryption key", "filename on server"],
+#   "hashsum": ["encryption key", "filename on server"],
+#   "hashsum": ["encryption key", "filename on server"]
+# }
 #
 
 
@@ -308,6 +320,8 @@ class CloudZec:
         if os.path.exists(self.keysFile):
             with open(self.keysFile, 'r') as fIn:
                 self.keys = json.load(fIn)
+                # Check for upgrade from hashsum:key to hashsum:[key, filename]
+                self.keys = self.upgradeKeys(self.keys)
         else:
             self.storeKeys()
 
@@ -323,6 +337,34 @@ class CloudZec:
             json.dump(self.keys, fOut, sort_keys=True, indent=2)
 
 
+    def upgradeKeys(self, dictKeys):
+        """
+        Upgrade from hashsum:key to hashsum:[key, filename]
+        
+        @param dictKeys: either a dict of keys using the old or the new format
+        @type dictKeys: dict
+        @return: Dict in the form of hashsum:[key, filename]
+        """
+        self.debug('Upgrading keys…')
+        if dictKeys: # If dictKeys is not empty
+            # Get a random item
+            key = list(dictKeys.keys())[0]
+            item = dictKeys[key]
+            # And check if it is a string (old format) or a list (new format)
+            if isinstance(item, list):
+                return dictKeys
+            elif isinstance(item, str):
+                self.debug('  It\'s a str (old format), need to upgrade…')
+                newDictKeys = {}
+                for hashsum in dictKeys:
+                    newDictKeys[hashsum] = [dictKeys[hashsum], hashsum]
+                return newDictKeys
+            else:
+                raise Exception('Unknown type for keys: {}'.format(type(item)))
+        else:
+            return dictKeys
+
+
     def getKey(self, hashsum, generateKey=True):
         """
         Return key for en-/decryption based on the given hash
@@ -330,21 +372,40 @@ class CloudZec:
         @param hashsum: The key/hash-value
         @param hashsum: str
         @param generateKey: If True, a key will be generated if required. If False an exception will be thrown
-        @param hashsum: bool
-        @return: Returns A key for en-/decryption
+        @param generateKey: bool
+        @return: Returns a key for en-/decryption
         """
         self.debug('Get key: {}'.format(hashsum))
         if hashsum in self.keys:
-            return self.keys[hashsum]
+            return self.keys[hashsum][0]
         else:
             if generateKey:
-                self.keys[hashsum] = self.genSymKey()
+                self.keys[hashsum] = [self.genSymKey(), self.genFilename()] # If we don't have a key, we also don't have a flename
                 self.storeKeys()
-                return self.keys[hashsum]
+                return self.keys[hashsum][0]
             else:
                 raise Exception('No key found for {}'.format(hashsum))
 
 
+    def getFilename(self, hashsum):
+        """
+        Return filename for the remote host based on the given hash
+
+        @param hashsum: The key/hash-value
+        @param hashsum: str
+        @return: Returns a filename for the remote host
+        """
+        #self.debug('Get filename: {}'.format(hashsum))
+        if hashsum in self.keys:
+            if self.keys[hashsum][1] is None:
+                #self.keys[hashsum][1] = self.genFilename()
+                #self.storeKeys() # We need to store the keys, otherwise CloudZec will forget it
+                raise Exception('We don\'t have a filename but a key? The fuck is wrong with you?')
+            return self.keys[hashsum][1]
+        else:
+            raise Exception('Hashsum is not in self.keys, this should not happen :(')
+    
+    
     def genSymKey(self, length=32):
         """
         Generates a nice symmetric key
@@ -361,6 +422,24 @@ class CloudZec:
         chars = string.ascii_letters + string.digits + string.punctuation
         return ''.join(self.rng.choice(chars) for i in range(length))
 
+
+    def genFilename(self, length=32):
+        """
+        Generates a nice filename
+
+        @param length: Length of filename
+        @type length: int
+        @return: Returns a filename
+        """
+        self.debug('Generate filename')
+        # Generate a random string
+        chars = string.ascii_letters + string.digits
+        filenames = set( item[1] for item in self.keys )
+        filename = None
+        while filename is None or filename in filenames:
+            filename = ''.join(random.choice(chars) for i in range(length))
+        return filename
+ 
 
     def loadLocalLog(self):
         """
@@ -721,6 +800,8 @@ class CloudZec:
                 localKeysPath = self.decryptFile(remoteKeysPath, passphrase=self.masterKey)
                 with open(localKeysPath, 'r') as fIn:
                     remoteKeys = json.load(fIn)
+                    # Check for upgrade from hashsum:key to hashsum:[key, filename]
+                    remoteKeys = self.upgradeKeys(remoteKeys)
                 # Remove tmpfile
                 os.remove(localKeysPath)
             # Merge with local keys
@@ -729,10 +810,14 @@ class CloudZec:
                 targetKeys[key] = self.keys[key]
             for key in remoteKeys:
                 if key in targetKeys:
-                    if targetKeys[key] == remoteKeys[key]:
+                    if targetKeys[key][0] == remoteKeys[key][0]:
                         pass
                     else:
                         print('Damnit, Keys don\'t match for {}'.format(key))
+                    if targetKeys[key][1] == remoteKeys[key][1]:
+                        pass
+                    else:
+                        print('Damnit, Filenames don\'t match for {}'.format(key))
                 else:
                     targetKeys[key] = remoteKeys[key]
             # Cleanup if cleanup is True and keys is not None
@@ -899,7 +984,7 @@ class CloudZec:
         ## Sync keys before syncing files, otherwise decryption with files from remote to local will throw an exception, don't cleanup keys
         self.syncKeysWithBoth()
         ## Merge number 1: Update the local repository
-        self.debug('    Update the local repository')
+        self.debug('  Update the local repository')
         # Get files to remove and add
         diff_l4 = self.createDiffFromDict(local_dict, target_dict)
         if diff_l4: # If diff_l4 is not empty
@@ -937,12 +1022,12 @@ class CloudZec:
         # Pull and decrypt
         pathes = []
         for hashsum in queuePull_set:
-            remoteFilePath = self.pull(os.path.join('files', hashsum))
+            remoteFilePath = self.pull(os.path.join('files', self.getFilename(hashsum)))
             localFilePath = self.decryptFile(remoteFilePath, passphrase=self.getKey(hashsum, generateKey=False))
             pathes.append(localFilePath)
         # Copying
         for item in queuePull_l4:
-            localFilePath = os.path.join(self.cache, item[2])
+            localFilePath = os.path.join(self.cache, self.getFilename(item[2]))
             localNewPath = os.path.join(self.syncFolder, item[1])
             self.debug('{} → {}'.format(os.path.basename(localFilePath), item[1]))
             if not os.path.exists(os.path.dirname(localNewPath)):
@@ -956,7 +1041,7 @@ class CloudZec:
         # Store remote log. Do not merge the remote_l4 and the diff_l4, just store the target_l4. If the remote log got removed, you would only store the diff and this is not enough. Only the target_l4 contains the whole history
         self.storeLocalLog(target_l4)
         ## Merge number 2: Update the remote repository
-        self.debug('    Update the remote repository')
+        self.debug('  Update the remote repository')
         # Get files to remove and add
         diff_l4 = self.createDiffFromDict(remote_dict, target_dict)
         if diff_l4: # If diff_l4 is not empty
@@ -979,30 +1064,33 @@ class CloudZec:
             if not item[2] in queuePush_dict:
                 queuePush_dict[item[2]] = item[1]
         # Encrypt and push
-        pathes = []
         for hashsum in queuePush_dict:
             self.debug(hashsum)
             localPath = self.encryptFile(queuePush_dict[hashsum], hashsum, self.getKey(hashsum))
-            remotePath = os.path.join('files', hashsum)
+            remotePath = os.path.join('files', self.getFilename(hashsum))
             self.push(localPath, remotePath)
             os.remove(localPath)
         # Store remote log. Do not merge the remote_l4 and the diff_l4, just store the target_l4. If the remote log got removed, you would only store the diff and this is not enough. Only the target_l4 contains the whole history
         self.storeRemoteLog(target_l4)
         ## Cleanup and sync keys
         # Get a set of all avaliable hashsums (files) to keep
-        filesKeep_set = set( target_dict[item]['hashsum'] for item in target_dict )
+        hashsumsKeep_set = set( target_dict[item]['hashsum'] for item in target_dict )
         # Sync keys using this list
-        self.syncKeysWithBoth(cleanup=self.cleanup, keys=filesKeep_set)
+        self.syncKeysWithBoth(cleanup=self.cleanup, keys=hashsumsKeep_set)
         # Cleanup of the remote repository
         if self.cleanup:
             self.debug('  Cleaning up files on the remote repository…')
             # Get all files on remote
             filesAll_list = self.sftp.listdir(os.path.join(self.remotePath, 'files'))
+            # Get all filenames to keep
+            filesKeep_set = set()
+            for hashsum in hashsumsKeep_set:
+                filesKeep_set.add(self.getFilename(hashsum))
             # Cleanup
-            for hashsum in filesAll_list:
-                if not hashsum in filesKeep_set:
-                    self.debug('    Removing file {}'.format(hashsum))
-                    self.sftp.remove(os.path.join(self.remotePath, 'files', hashsum))
+            for filename in filesAll_list:
+                if not filename in filesKeep_set:
+                    self.debug('    Removing file {}'.format(filename))
+                    self.sftp.remove(os.path.join(self.remotePath, 'files', filename))
         # Unlock and disconnect
         self.unlock()
         self.disconnect()
