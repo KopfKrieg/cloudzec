@@ -192,17 +192,18 @@ class CloudZec:
         Initialises the remote host. Caution: Deletes everything!
         """
         self.debug('Remote init')
-        # Connect and lock
+        # Connect
         self.connect()
-        self.lock()
         # If self.remotePath exists
         if self.remotePathExists():
+            # Lock (because: why not?)
+            self.lock()
             # Clear everything in self.remotePath
             self.remoteTreeRemove(self.remotePath)
         # Setup self.remotePath
         self.sftp.mkdir(self.remotePath)
         self.sftp.mkdir(os.path.join(self.remotePath, 'files'))
-        # Unlock and disconnect
+        # Unlock and disconnect (well, disconnect should fail)
         self.unlock()
         self.disconnect()
 
