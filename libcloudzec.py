@@ -99,6 +99,7 @@ class CloudZec:
         self.syncFolder = os.path.join(home, 'CloudZec')    # Local sync-folder
         self.syncKeys = True            # Sync keys with the remote host only if self.syncKeys is True
         self.useTimestamp = True        # If True, a timestamp comparison is done instead of generating hashsums. This speeds up a lot but is not as good as comparing hashsums
+        self.updateTimestamp = True     # If True and the timestamp from log and real files don't match (but hashsum is the same), then update the timestamp from both to the oldest timestamp! If False, don't.
         # Create confFolder if missing
         if not os.path.exists(self.confFolder):
             self.debug('Create confFolder {}'.format(self.confFolder))
@@ -228,7 +229,7 @@ class CloudZec:
         with open(self.confFile, 'r') as fIn:
             conf = json.load(fIn)
         rewrite = False
-        keys = ['cache', 'cleanup', 'compression', 'device', 'encryption', 'hashAlgorithm', 'identFile', 'masterKeyFile', 'remoteHost', 'remotePath', 'remotePort', 'remoteUsername', 'syncFolder', 'syncKeys', 'useTimestamp']
+        keys = ['cache', 'cleanup', 'compression', 'device', 'encryption', 'hashAlgorithm', 'identFile', 'masterKeyFile', 'remoteHost', 'remotePath', 'remotePort', 'remoteUsername', 'syncFolder', 'syncKeys', 'updateTimestamp', 'useTimestamp']
         for key in keys:
             try:
                 exec('self.{} = conf[\'{}\']'.format(key, key))
@@ -249,7 +250,7 @@ class CloudZec:
         Store configuration into self.confFile (values read from self.$variable)
         """
         self.debug('Store Configuration: {}'.format(self.confFile))
-        keys = ['cache', 'cleanup', 'compression', 'device', 'encryption', 'hashAlgorithm', 'identFile', 'masterKeyFile', 'remoteHost', 'remotePath', 'remotePort', 'remoteUsername', 'syncFolder', 'syncKeys', 'useTimestamp']
+        keys = ['cache', 'cleanup', 'compression', 'device', 'encryption', 'hashAlgorithm', 'identFile', 'masterKeyFile', 'remoteHost', 'remotePath', 'remotePort', 'remoteUsername', 'syncFolder', 'syncKeys', 'updateTimestamp', 'useTimestamp']
         conf = {}
         for key in keys:
             exec('conf[\'{}\'] = self.{}'.format(key, key))
@@ -658,6 +659,14 @@ class CloudZec:
                     else:
                         self.debug('    They don\'t match, generate hashsum as fallback')
                         hashsum = self.getHashOfFile(filename)
+                        if self.updateTimestamp: # if True: Update access and modification-time of the file to speedup comparison on the next sync
+                            self.debug('      Updating timestamp to the oldest')
+                            # Get path
+                            localPath = os.path.join(self.syncFolder, relativePath)
+                            # Get oldest timestamp
+                            newTimestamp = min(timestamp, compareDict[relativePath]['timestamp'])
+                            # Update access and modification-time
+                            os.utime(localPath, (newTimestamp, newTimestamp))
                 else:
                     hashsum = self.getHashOfFile(filename)
                 l4.append([timestamp, relativePath, hashsum, '+'])
