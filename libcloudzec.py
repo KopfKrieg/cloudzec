@@ -139,7 +139,7 @@ class CloudZec:
             raise Exception('You need to set a username in {}'.format(self.confFile))
         # Create gpg instance | needs to be defined before en/decrypting anything
         homedir = os.path.join(home, '.gnupg')
-        if gnupg.__version__.startswith('1.3'): # The „new“ version of GnuPG from isislovecruft on GitHub
+        if gnupg.__version__.startswith('2.'): # The „new“ version of GnuPG from isislovecruft on GitHub
             binary = '/usr/bin/gpg2' # No symlinks allowed
             self.gpg = gnupg.GPG(binary=binary, homedir=homedir)
         else:   # „Old“ versions or other versions of GnuPG:
@@ -738,7 +738,7 @@ class CloudZec:
         # Else encrypt it
         with open(pathIn, 'rb') as fIn:
             binary = None
-            if gnupg.__version__.startswith('1.3'): # The „new“ version of GnuPG from isislovecruft on GitHub
+            if gnupg.__version__.startswith('2.'): # The „new“ version of GnuPG from isislovecruft on GitHub
                 binary = self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, encrypt=False, symmetric=True, always_trust=True, cipher_algo='AES256', compress_algo=self.compression)
             else:   # „Old“ versions or other versions of GnuPG:
                 binary = self.gpg.encrypt(fIn.read(), passphrase=passphrase, armor=False, symmetric=True, always_trust=True, recipients=None)
@@ -850,7 +850,7 @@ class CloudZec:
                 with self.sftp.open(serverLogPath, 'w') as fOut:
                     data = json.dumps(targetKeys)
                     enc = None
-                    if gnupg.__version__.startswith('1.3'): # The „new“ version of GnuPG from isislovecruft on GitHub
+                    if gnupg.__version__.startswith('2.'): # The „new“ version of GnuPG from isislovecruft on GitHub
                         enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='ZIP')
                     else:   # „Old“ versions or other versions of GnuPG:
                         enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, symmetric=True, recipients=None)
@@ -935,7 +935,7 @@ class CloudZec:
         with self.sftp.open(remoteLogPath, 'w') as fOut:
             data = json.dumps(log)
             enc = None
-            if gnupg.__version__.startswith('1.3'): # The „new“ version of GnuPG from isislovecruft on GitHub
+            if gnupg.__version__.startswith('2.'): # The „new“ version of GnuPG from isislovecruft on GitHub
                 enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, encrypt=False, symmetric=True, cipher_algo=self.encryption, compress_algo='ZIP')
             else:   # „Old“ versions or other versions of GnuPG:
                 enc = self.gpg.encrypt(data, passphrase=self.masterKey, armor=True, symmetric=True, recipients=None)
