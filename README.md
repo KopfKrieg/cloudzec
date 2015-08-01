@@ -49,7 +49,7 @@ cd ..
 ```
 
 #### Get CloudZec sync ####
-```git clone http://github.com/revogit/cloudzec.git```
+```git clone http://github.com/KopfKrieg/cloudzec.git```
 
 #### Throw all in one directory ####
 ```
