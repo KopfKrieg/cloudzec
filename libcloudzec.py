@@ -37,7 +37,7 @@
 ## The l4-format is a list in the following specification, sorted by its timestamp (first element)
 #
 # List index
-# 0  - float  | Access-time of the file in UNIX-format, from os.path.getatime(path) or time.time() [previously used modification-time, os.path.getmtime(path), see bug #12)
+# 0  - float  | Access-time of the file in UNIX-format, from os.path.getctime(path) or time.time() [previously used access/modification-time, see bug #12/#17)
 # 1  - string | Relative path of file, e.g. folder/file1.txt
 # 2  - string | Hashsum of file
 # 3  - string | Action, can either be + or -
@@ -648,7 +648,7 @@ class CloudZec:
             if os.path.islink(filename):    # Caution: os.path.isfile() returns True if the linked item is a file! So check first, if it is a link!
                 self.debug('  Ignoring link: {}'.format(filename))
             else:
-                timestamp = os.path.getatime(filename)
+                timestamp = os.path.getctime(filename)
                 relativePath = filename.split(self.syncFolder)[1][1:]
                 hashsum = None
                 if relativePath in compareDict and self.useTimestamp: # is True
