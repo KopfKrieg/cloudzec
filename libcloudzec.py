@@ -382,7 +382,7 @@ class CloudZec:
             return self.keys[hashsum][0]
         else:
             if generateKey:
-                self.keys[hashsum] = [self.genSymKey(), self.genFilename()] # If we don't have a key, we also don't have a flename
+                self.keys[hashsum] = [self.genSymKey(), self.genFilename()] # If we don't have a key, we also don't have a filename
                 self.storeKeys()
                 return self.keys[hashsum][0]
             else:
