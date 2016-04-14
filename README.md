@@ -67,7 +67,7 @@ You can now run CloudZec sync from ```run``` via ```./cloudzec```
 
 ### On the first start, do the following ###
 - Run ```cloudzec --init```
-- Edit your config-file (under ```~/.cloudzec/cloudzec.conf```)
+- Edit your config-file (```~/.cloudzec/cloudzec.conf```)
 - Run ```cloudzec --remoteinit```
 - Done
 
@@ -86,4 +86,4 @@ Look at the LICENSE file (short version: GPLv3+)
 
 ## Website ##
 
-Yep, there's a website: [cloudzec.org](http://cloudzec.org)
+Yep, there's a website: [cloudzec.kopfkrieg.org](http://cloudzec.kopfkrieg.org)
