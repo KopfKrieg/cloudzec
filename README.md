@@ -2,6 +2,10 @@
 
 CloudZec sync (short „CloudZec“) is a free synchronisation solution with end-to-end encryption, based on stable technologies like GnuPG and SFTP.
 
+## Warning ##
+
+This project is no longer maintained!
+
 ## Features ##
 - No additional server software required
 - End-to-end encryption
